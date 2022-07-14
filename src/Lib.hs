@@ -7,7 +7,7 @@ Might be nicer to adapt to
 <http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.66.6645&rep=rep1&type=pdf>
 /[MM] I am not a number: I am a free variable - Conor McBride and James McKinna/.
 -}
-{-# LANGUAGE DefaultSignatures #-}
+-- {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveTraversable #-}
@@ -25,8 +25,6 @@ module Lib where
 
 import Data.Set (Set)
 import qualified Data.Set as S
-import Data.Map (Map, (!))
-import qualified Data.Map as M
 import Data.List
 import Data.Functor.Const
 import Data.Functor.Identity
@@ -42,30 +40,55 @@ newtype Name = Name { getName :: String }
   deriving (Eq, Ord, Show)
 
 -- | @`WithFreeVar` x v@ represents `x`-expressions with one extra free variable (not
--- from `v`), optinally together with a name suggestion for that variable.
+-- from `v`), optionally together with a name suggestion for that variable.
 data WithFreeVar x v =
-  FV { getSuggestion :: Maybe Name
-     , getScoped :: x (Maybe v) }
+  FV { getSuggestion :: Maybe Name -- ^ The optional name suggestion for the bound variable.
+     , getScoped :: x (Maybe v) -- ^ The scoped expression containing one new variable.
+     }
   deriving ( Functor      -- ^ stock derivation of 'Functor'
            , Foldable     -- ^ stock derivation of 'Foldable'
            , Traversable  -- ^ stock derivation of 'Traversable'
            )
 
+-- | Prints the internal structure (not for user consumption). Note we could use
+-- @`Show1` t => `Show` (`WithFreeVar` t v)@ here like for `Eq` but it seems much
+-- more painful to write like that
 deriving instance Show v => Show (WithFreeVar Term v)
+-- | Prints the internal structure (not for user consumption). Note we could use
+-- @`Show1` t => `Show` (`WithFreeVar` t v)@ here like for `Eq` but it seems much
+-- more painful to write like that
 deriving instance Show v => Show (WithFreeVar Prop v)
 
--- The type of terms with free variables of type v
-data Term v = App (Term v) [Term v]
-            | Ite (Prop v) (Term v) (Term v)
-            | Abs (WithFreeVar Term v)
-            | Var v
-            | Constant String
-            deriving (Show, Functor, Foldable, Traversable)
+-- | The type of terms with free variables of type v.
+data Term v
+  = App (Term v) [Term v]
+    -- ^ A function application. Note that the function itself can be a term.
+  | Ite (Prop v) (Term v) (Term v)
+    -- ^ An if\/then\/else expression. Useful for specifying functions by cases, for example.
+  | Abs (WithFreeVar Term v)
+    -- ^ A function abstraction (eg \(x \mapsto x^2\)).
+  | Var v
+    -- ^ A variable, either bound higher in the expression or free.
+  | Constant String
+    -- ^ A constant (eg the naturals, or the sin function).
+  deriving ( Show          -- ^ stock derivation of 'Show', not for user consumption.
+           , Functor       -- ^ stock derivation of 'Functor'
+           , Foldable      -- ^ stock derivation of 'Foldable'
+           , Traversable   -- ^ stock derivation of 'Traversable'
+           )
 
+-- | Note this considers expressions with different name suggestions to be
+-- different. See `AlphaEq1`.
 instance Eq1 t => Eq1 (WithFreeVar t) where
   liftEq f (FV n1 p1) (FV n2 p2) = n1 == n2 && liftEq (liftEq f) p1 p2
 
--- Note this can be derived using TemplateHaskell but it's not worth it
+-- | Note this considers expressions with different name suggestions to be
+-- different. See `AlphaEq`.
+instance (Eq1 t, Eq v) => Eq (WithFreeVar t v) where
+  (==) = liftEq (==)
+
+-- | This can be derived using TemplateHaskell but it's not worth it. Note
+-- this considers expressions with different name suggestions to be different.
 instance Eq1 Term where
   liftEq f (App g xs) (App h ys) = liftEq f g h && and (zipWith (liftEq f) xs ys)
   liftEq f (Ite i1 t1 e1) (Ite i2 t2 e2) = liftEq f i1 i2 && liftEq f t1 t2 && liftEq f e1 e2
@@ -74,18 +97,28 @@ instance Eq1 Term where
   liftEq f (Constant x) (Constant y) = x == y
   liftEq _ _ _ = False
 
--- The type of propositions with free variables of type v
-data Prop v = And (Prop v) (Prop v)
-            | Or (Prop v) (Prop v)
-            | Implies (Prop v) (Prop v)
-            | Not (Prop v)
-            | PFalse
-            | PTrue
-            | Eq (Term v) (Term v)
-            | RApp (Term v) [Term v]
-            | Forall (WithFreeVar Prop v)
-            | Exists (WithFreeVar Prop v)
-            deriving (Show, Functor, Foldable, Traversable)
+-- | Note this considers expressions with different name suggestions to be
+-- different. See `AlphaEq`.
+instance Eq v => Eq (Term v) where
+  (==) = liftEq (==)
+
+-- | The type of propositions with free variables of type `v`.
+data Prop v
+  = And (Prop v) (Prop v)
+  | Or (Prop v) (Prop v)
+  | Implies (Prop v) (Prop v)
+  | Not (Prop v)
+  | PFalse
+  | PTrue
+  | Eq (Term v) (Term v)
+  | RApp (Term v) [Term v]
+  | Forall (WithFreeVar Prop v)
+  | Exists (WithFreeVar Prop v)
+  deriving ( Show          -- ^ stock derivation of 'Show', not for user consumption.
+           , Functor       -- ^ stock derivation of 'Functor'
+           , Foldable      -- ^ stock derivation of 'Foldable'
+           , Traversable   -- ^ stock derivation of 'Traversable'
+           )
 
 instance Eq1 Prop where
   liftEq f (And p1 q1) (And p2 q2) = liftEq f p1 p2 && liftEq f q1 q2
@@ -280,11 +313,10 @@ instance Monad Term where
 
 peanoOne :: Prop v
 peanoOne =
-    Forall $ FV (Just (Name "x")) $
-      (Not
-        (Eq
-          (App (Constant "succ") [Var Nothing])
-          (App (Constant "zero") [])))
+    Forall $ FV (Just (Name "x")) $ Not $
+      Eq
+       (App (Constant "succ") [Var Nothing])
+       (App (Constant "zero") [])
 
 unaryApply :: String -> Term v -> Term v
 unaryApply f x = App (Constant f) [x]
@@ -311,14 +343,6 @@ instantiateT x = (>>= maybe x Var) . getScoped
 instantiateP :: Term v -> WithFreeVar Prop v -> Prop v
 instantiateP x = (`bindP` maybe x Var) . getScoped
 
--- instantiateT x (App f xs) = App (instantiateT x f) (instantiateT x <$> xs)
--- instantiateT x (Var Nameless) = x
--- instantiateT x (Var (Suggested _)) = x
--- instantiateT x (Var (Free y)) = Var y
---
--- instantiateP :: Term v -> Prop (Scoped v) -> Prop v
--- instantiateP x p = undefined
-
 forall :: Name -> Prop Name -> Prop Name
 forall x p = Forall (abstractP x p)
 
@@ -343,20 +367,15 @@ peanoTwo =
         (Eq (Var (Name "x")) (Var (Name "y")))
 
 toClosedT :: Term v -> Maybe (Term a)
-toClosedT = traverse (\_ -> Nothing)
---
+toClosedT = traverse $ const Nothing
+
 toClosedP :: Prop v -> Maybe (Prop a)
-toClosedP = traverse (\_ -> Nothing)
---
+toClosedP = traverse $ const Nothing
+
 -- change to hashset
 availableNames :: Set Name
 availableNames = S.fromAscList $ map (Name . (:[])) "abcdefghijklmnopqrstuvwxyz"
 
--- -- s -> m (a, s)
--- -- StateT s m a
--- --
--- -- (v -> String, Set String) -> Const String (v, (v -> String, Set String))
---
 -- the set should have the names which are *not* available to use
 pprintProp :: Set Name -> Prop Name -> String
 pprintProp s (And p1 p2) = "(" ++ pprintProp s p1 ++ " ∧ " ++ pprintProp s p2 ++ ")"
@@ -369,12 +388,12 @@ pprintProp s (Eq t u) = "(" ++ pprintTerm s t ++ " = " ++ pprintTerm s u ++ ")"
 pprintProp s (RApp g x) =  pprintTerm s g ++ "(" ++ intercalate ", " (map (pprintTerm s) x) ++ ")"
 pprintProp s (Forall v) =
   let new = case getSuggestion v of
-              Just n -> if n `S.member` s then n else S.findMin (availableNames S.\\ s)
+              Just n -> if n `S.notMember` s then n else S.findMin (availableNames S.\\ s)
               Nothing -> S.findMin (availableNames S.\\ s)
   in "∀" ++ getName new ++ ", " ++ pprintProp (S.insert new s) (instantiateP (Var new) v)
 pprintProp s (Exists v) =
   let new = case getSuggestion v of
-              Just n -> if n `S.member` s then n else S.findMin (availableNames S.\\ s)
+              Just n -> if n `S.notMember` s then n else S.findMin (availableNames S.\\ s)
               Nothing -> S.findMin (availableNames S.\\ s)
   in "∃" ++ getName new ++ ", " ++ pprintProp (S.insert new s) (instantiateP (Var new) v)
 
@@ -383,7 +402,7 @@ pprintTerm s (App g x) = pprintTerm s g ++ "(" ++ intercalate ", " (map (pprintT
 pprintTerm s (Ite p t1 t2) = "if " ++ pprintProp s p ++ " then " ++ pprintTerm s t1 ++ " else " ++ pprintTerm s t2
 pprintTerm s (Abs v) =
   let new = case getSuggestion v of
-              Just n -> if n `S.member` s then n else S.findMin (availableNames S.\\ s)
+              Just n -> if n `S.notMember` s then n else S.findMin (availableNames S.\\ s)
               Nothing -> S.findMin (availableNames S.\\ s)
    in "λ" ++ getName new ++ ", " ++ pprintTerm (S.insert new s) (instantiateT (Var new) v)
 pprintTerm s (Var x) = getName x

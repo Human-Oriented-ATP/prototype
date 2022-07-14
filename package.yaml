@@ -38,6 +38,10 @@ executables:
     - -with-rtsopts=-N
     dependencies:
     - human-style
+    # work around https://github.com/commercialhaskell/stack/issues/5439
+    when: 
+    - condition: false
+      other-modules: Paths_human_style 
 
 tests:
   human-style-test:
@@ -49,3 +53,7 @@ tests:
     - -with-rtsopts=-N
     dependencies:
     - human-style
+    # work around https://github.com/commercialhaskell/stack/issues/5439
+    when:
+    - condition: false
+      other-modules: Paths_human_style

@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 1a399076fe96fbb9e0cfa437030327a80a6eb85239d6d34f41111f96e52932bf
+-- hash: 6f9338165bb2773d8b08fd98da12b03231828c57636737261cfcce9ac1d83e6d
 
 name:           human-style
 version:        0.1.0.0
@@ -41,8 +41,6 @@ library
 
 executable human-style-exe
   main-is: Main.hs
-  other-modules:
-      Paths_human_style
   hs-source-dirs:
       app
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
@@ -57,8 +55,6 @@ executable human-style-exe
 test-suite human-style-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
-  other-modules:
-      Paths_human_style
   hs-source-dirs:
       test
   ghc-options: -threaded -rtsopts -with-rtsopts=-N

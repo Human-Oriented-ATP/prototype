@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 6f9338165bb2773d8b08fd98da12b03231828c57636737261cfcce9ac1d83e6d
+-- hash: bbdbeb42f56581eaed97135de2e06c8b87fa3f7a75b5c773bf0c0a6fec33e128
 
 name:           human-style
 version:        0.1.0.0
@@ -28,6 +28,7 @@ source-repository head
 library
   exposed-modules:
       Lib
+      Prisoner
   other-modules:
       Paths_human_style
   hs-source-dirs:
@@ -35,7 +36,6 @@ library
   build-depends:
       base >=4.7 && <5
     , containers
-    , deriving-compat >=0.6
     , mtl
   default-language: Haskell2010
 
@@ -47,7 +47,6 @@ executable human-style-exe
   build-depends:
       base >=4.7 && <5
     , containers
-    , deriving-compat >=0.6
     , human-style
     , mtl
   default-language: Haskell2010
@@ -61,7 +60,6 @@ test-suite human-style-test
   build-depends:
       base >=4.7 && <5
     , containers
-    , deriving-compat >=0.6
     , human-style
     , mtl
   default-language: Haskell2010

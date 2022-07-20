@@ -3,15 +3,8 @@ Adapted from
 <http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.66.6645&rep=rep1&type=pdf>
 /[MM] I am not a number: I am a free variable - Conor McBride and James McKinna/.
 -}
-{-# LANGUAGE DeriveFoldable #-}
-{-# LANGUAGE DeriveFunctor #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternSynonyms #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE RoleAnnotations #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 module Lib2 where
 
 import Data.String (IsString(..))
@@ -20,8 +13,7 @@ import Data.String (IsString(..))
 newtype ExternalName = ExternalName { getExternalName :: String }
   deriving (Eq, Ord, Show)
 
-newtype InternalName = InternalName { getInternalName :: [(String, Int)] }
-  deriving (Eq, Ord, Show)
+type InternalName = [(String, Int)]
 
 -- For convenience
 instance IsString ExternalName where
@@ -120,9 +112,24 @@ instantiate im (Sc b) = replace 0 b where
     | i == m    = im
   replace _ t = t
 
+forall :: Maybe ExternalName -> InternalName -> Expr -> Expr
+forall m x p = Forall m (abstract x p)
+
+exists :: Maybe ExternalName -> InternalName -> Expr -> Expr
+exists m x p = Exists m (abstract x p)
+
 instantiateAbs :: Expr -> Expr -> Maybe Expr
 instantiateAbs (Abs _ p) x = Just (instantiate x p)
 instantiateAbs _         _ = Nothing
+
+instantiateForall :: Expr -> Expr -> Maybe (Maybe ExternalName, Expr)
+instantiateForall (Forall nm p) x = Just (nm, instantiate x p)
+instantiateForall _            _  = Nothing
+
+type Agency t = InternalName -> t
+
+enterForall :: Agency (Expr -> Maybe (Maybe ExternalName, Expr))
+enterForall root e = instantiateForall e (Free root)
 
 -- | Forget all name suggestions.
 forgetSuggestions :: Expr -> Expr
@@ -135,10 +142,15 @@ forgetSuggestions (B i)          = B i
 -- goIntoForall :: Expr -> Maybe Expr
 -- goIntoForall (Forall x p) = Just (instantiate _ p)
 -- goIntoForall _            = Nothing
---
--- commuteForalls :: Expr -> Maybe Expr
--- commuteForalls (Forall x p) = Just _
--- commuteForalls _            = Nothing
+
+swapForalls :: Agency (Expr -> Maybe Expr)
+swapForalls root e = do
+  (x0, first)  <- enterForall (("x", 0) : root) e
+  (x1, second) <- enterForall (("x", 1) : root) first
+  return $ forall x1 (("x", 1) : root) (forall x0 (("x", 0) : root) second)
+
+unsafeRunAgency :: Agency t -> t
+unsafeRunAgency x = x []
 
 -- | Nothing right now.
 someFunc :: IO ()

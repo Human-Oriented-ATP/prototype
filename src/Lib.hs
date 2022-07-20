@@ -126,11 +126,6 @@ instantiateForall :: Expr -> Expr -> Maybe (Maybe ExternalName, Expr)
 instantiateForall (Forall nm p) x = Just (nm, instantiate x p)
 instantiateForall _            _  = Nothing
 
-type Agency t = InternalName -> t
-
-enterForall :: Agency (Expr -> Maybe (Maybe ExternalName, Expr))
-enterForall root e = instantiateForall e (Free root)
-
 -- | Forget all name suggestions.
 forgetSuggestions :: Expr -> Expr
 forgetSuggestions (App f x)      = App (forgetSuggestions f) (forgetSuggestions x)
@@ -139,9 +134,10 @@ forgetSuggestions (Free m)       = Free m
 forgetSuggestions (Con s)        = Con s
 forgetSuggestions (B i)          = B i
 
--- goIntoForall :: Expr -> Maybe Expr
--- goIntoForall (Forall x p) = Just (instantiate _ p)
--- goIntoForall _            = Nothing
+type Agency t = InternalName -> t
+
+enterForall :: Agency (Expr -> Maybe (Maybe ExternalName, Expr))
+enterForall root e = instantiateForall e (Free root)
 
 swapForalls :: Agency (Expr -> Maybe Expr)
 swapForalls root e = do

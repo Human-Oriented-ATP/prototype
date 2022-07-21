@@ -10,14 +10,12 @@ import Control.Monad.State
 import Data.Foldable
 import Data.Functor.Identity
 import Data.HashMap.Strict (HashMap)
-import Data.List.NonEmpty
 import Data.Void
 import Text.Megaparsec
 import Text.Megaparsec.Char
-import qualified Control.Monad.Combinators.NonEmpty as NE
 import qualified Data.HashMap.Strict as M
 
-import Lib2
+import Lib
 
 -- Uses megaparsec with a custom state to keep track of local bindings
 -- See https://markkarpov.com/tutorial/megaparsec.html for a tutorial on
@@ -33,29 +31,46 @@ exampleStrings :: [String]
 exampleStrings =
   [ "succ"
       -- test constants
-  , "(succ zero)"
+  , "succ(zero)"
       -- test application + constants
-  , "(not ((eq (succ zero)) zero))"
+  , "not(eq(succ(zero))(zero))"
       -- test more complex application
-  , "(not (eq (succ zero) zero))"
+  , "not(eq(succ(zero), zero))"
       -- test n-ary application
-  , "forall x, (not (eq (succ zero) zero))"
+  , "forall x, not(eq(succ(zero), zero))"
       -- test binders
-  , "forall x, (not (eq (succ x) zero))"
+  , "forall x, not(eq(succ(x), zero))"
       -- test binding (peano one)
-  , "forall x, forall y, (implies (eq (succ x) (succ y)) (eq x y))"
+  , "forall x, forall y, implies(eq(succ(x), succ(y)), eq(x, y))"
       -- test multiple binding (peano two)
   ]
 
+-- This is the syntax I want to parse
+-- expr := expr(args)
+--       | forall x, expr
+--       | con
+--       | free
+-- args := expr[,expr]*
+--
+-- To remove left-recursion, transform it into this syntax
+-- expr     := expr-non(args)*
+-- expr-non := forall x, expr
+--           | con
+--           | free
+
 -- | The general expression parser.
 parseExpr :: Parser Expr
-parseExpr = parseApps <|> parseForall <|> parseFree <|> parseCon
+parseExpr = do
+  f <- parseExprNon
+  i <- many parseApps
+  return $ foldl' apps f i
 
--- | Parse a multi-application
-parseApps :: Parser Expr
-parseApps = do
-  f :| xs <- char '(' *> NE.sepEndBy1 parseExpr hspace <* char ')'
-  return $ apps f xs
+parseExprNon :: Parser Expr
+parseExprNon = parseForall <|> parseCon <|> parseFree
+
+-- | Parse a sequence of arguments
+parseApps :: Parser [Expr]
+parseApps = char '(' *> sepBy1 parseExpr (string ", ") <* char ')'
 
 -- | Register a new identifier, and return its internal name
 registerIdent :: MonadState (HashMap String InternalName, Int) m
@@ -118,4 +133,12 @@ parseSimple p inp =
 
 -- | Run the examples.
 runExamples :: IO ()
-runExamples = for_ exampleStrings $ parseTestT (parseExpr <* eof)
+runExamples = for_ exampleStrings $ \test -> do
+  putStrLn $ "Running test case: " ++ test
+  case evalState (runParserT (parseExpr <* eof) "example" test) (M.empty, 0) of
+    Left e -> putStr (errorBundlePretty e)
+    Right x -> do
+      putStr "Internal expression: "
+      print x
+      putStrLn $ "Pretty printed expression: " ++ pprintExpr x
+      putStr "\n"

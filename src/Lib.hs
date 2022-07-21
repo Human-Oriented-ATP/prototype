@@ -3,15 +3,23 @@ Adapted from
 <http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.66.6645&rep=rep1&type=pdf>
 /[MM] I am not a number: I am a free variable - Conor McBride and James McKinna/.
 -}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternSynonyms #-}
 module Lib where
 
+import Data.Hashable
+import Control.Monad.State
+import Data.HashSet (HashSet)
+import Data.HashMap.Strict (HashMap)
+import qualified Data.HashSet as S
+import qualified Data.HashMap.Strict as M
 import Data.String (IsString(..))
+import Data.List
 
 -- | A type to represent external variable names.
 newtype ExternalName = ExternalName { getExternalName :: String }
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show, Hashable)
 
 type InternalName = [(String, Int)]
 
@@ -61,6 +69,15 @@ peanoOne = App (Con "forall") $ Abs (Just "x") $ Sc $ App (Con "not") $
 apps :: Expr -> [Expr] -> Expr
 apps e [] = e
 apps e (x : xs) = apps (App e x) xs
+
+-- f                       -> (f, [])
+-- App f x                 -> (f, [x])
+-- App (App f x) y         -> (f, [y, x])
+-- App (App (App g x) y) z -> (g, [z, y, x])
+getAppChain :: Expr -> (Expr, [Expr])
+getAppChain (App f x) = (g, x:t)
+  where (g, t) = getAppChain f
+getAppChain t = (t, [])
 
 -- | Unary application of a constant function to an expression.
 pattern UApp :: String -> Expr -> Expr
@@ -147,6 +164,63 @@ swapForalls root e = do
 
 unsafeRunAgency :: Agency t -> t
 unsafeRunAgency x = x []
+
+data PrintingState = PS
+  { showMap :: HashMap InternalName ExternalName
+  , usedNames :: HashSet ExternalName
+  , counter :: Int
+  }
+
+getSuggestion' :: ExternalName -> State PrintingState (InternalName, ExternalName)
+getSuggestion' x = do
+  PS m s n <- get
+  let r = [("printing", n)]
+  put (PS (M.insert r x m) (S.insert x s) (n+1))
+  return (r, x)
+
+basicNames :: [ExternalName]
+basicNames = [ExternalName (x : replicate n '\'') | n <- [0..], x <- alph]
+  where alph = "abcdefghijklmnopqrstuvwxyz"
+
+unusedName :: HashSet ExternalName -> ExternalName
+unusedName s = head $ filter (not . (`S.member` s)) basicNames
+
+getFresh :: State PrintingState (InternalName, ExternalName)
+getFresh = do
+  (PS _ u _) <- get
+  getSuggestion' (unusedName u)
+
+getSuggestion :: ExternalName -> State PrintingState (InternalName, ExternalName)
+getSuggestion x = do
+  (PS _ y _) <- get
+  if x `S.member` y
+     then getFresh
+     else getSuggestion' x
+
+pprintBinderM :: String -> Maybe ExternalName -> Scoped -> State PrintingState String
+pprintBinderM b sug sc = do
+  (m, ExternalName sug') <- maybe getFresh getSuggestion sug
+  s <- pprintExprM $ instantiate (Free m) sc
+  return $ b ++ sug' ++ ", " ++ s
+
+pprintExprM :: Expr -> State PrintingState String
+-- special patterns (all these must come first!)
+pprintExprM (Forall sug sc) = pprintBinderM "∀" sug sc
+-- general patterns
+pprintExprM t@(App _ _) = do
+  let (f, x) = getAppChain t
+  fs <- pprintExprM f
+  xs <- traverse pprintExprM (reverse x)
+  return $ fs ++ "(" ++ intercalate ", " xs ++ ")"
+pprintExprM (Free x) = do
+  (PS m _ _) <- get
+  return $ getExternalName $ m M.! x
+pprintExprM (Con s) = return s
+pprintExprM (Abs sug sc) = pprintBinderM "λ" sug sc
+pprintExprM (B _) = error "term not closed"
+
+pprintExpr :: Expr -> String
+pprintExpr e = evalState (pprintExprM e) (PS mempty mempty 0)
 
 -- | Nothing right now.
 someFunc :: IO ()

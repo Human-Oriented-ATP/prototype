@@ -1,8 +1,8 @@
 module PPrinting where
 
-import Lib
+import Box
 import Poset
-import ExpressionFoundation
+import Lib
 import TableauFoundation
 import Data.Hashable
 import Data.HashSet (HashSet)
@@ -163,7 +163,7 @@ pprintHBox (head, Box hyps targs) = let
     showHeadWithNames showMap head ++
     "---- Hyps ----\n" ++
     dealWithEmpty ( intercalate "\n" (map (pprintExprWithHead head . fst) hyps) ) ++ "\n" ++
-    "---- Targs ----\n" ++ 
+    "---- Targs ----\n" ++
     dealWithEmpty ( intercalate "\n" (map (pprintExprWithHead head . fst) targs) )
 
 
@@ -184,7 +184,7 @@ aStr = pprintHBox aResult
 
 -- Universal modus ponens with hyp
 bh1 = forall (Just $ ExternalName "x") TNatural (TNatural, 0) $
-    Implies (Eq (UApp "succ" (Free (TNatural, 0))) (Con "1")) (Eq (Free (TNatural, 0)) (Con "0")) 
+    Implies (Eq (UApp "succ" (Free (TNatural, 0))) (Con "1")) (Eq (Free (TNatural, 0)) (Con "0"))
 
 bh2= Eq (UApp "succ" (Free (TNatural, 1))) (Con "1")
 

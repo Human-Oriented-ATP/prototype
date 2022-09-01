@@ -1,23 +1,23 @@
 module TableauFoundation where
 
 import Poset
-import ExpressionFoundation
+import Lib
 
 import Data.List
 
 -- <<<< TYPES DEFINING WHAT A TABLEAU IS >>>>
 
 type Quantifier = String
-data QuantifiedVariable = QVar {qVarGetQuantifier :: Quantifier,
-                                qVarGetExternalName :: Maybe ExternalName,
-                                qVarGetInternalName :: InternalName,
-                                qVarGetVarType :: VariableType}
+data QuantifiedVariable = QVar { qVarGetQuantifier :: Quantifier
+                               , qVarGetExternalName :: Maybe ExternalName
+                               , qVarGetInternalName :: InternalName
+                               }
   deriving (Eq)
 
 instance Show QuantifiedVariable where
-  show (QVar quantifier _ inNm varType) = case quantifier of
-    "Forall" -> "\8704" ++ show inNm ++ ":" ++ tail (show varType)
-    "Exists" -> "\8707" ++ show inNm ++ ":" ++ tail (show varType)
+  show (QVar quantifier _ inNm) = case quantifier of
+    "Forall" -> "\8704" ++ show inNm
+    "Exists" -> "\8707" ++ show inNm
     x -> "." ++ show inNm
 
 -- | Graveyard and quantification zone.

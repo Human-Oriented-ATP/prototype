@@ -4,7 +4,7 @@ Tableau implementation of foundations building on Bhavik's implementation for FO
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Redundant bracket" #-}
 {-# HLINT ignore "Redundant if" #-}
-module Lib where
+module Box where
 
 import ExpressionFoundation
 import TableauFoundation
@@ -91,7 +91,7 @@ mpUniversalHypsM = do
   (p', freeVars'@(freeVar':rest')) <- getHyp -- Pattern match to ensure there is a free variable in the expression
   let toInstantiate' = filter (`notElem` freeVars) freeVars' -- Finds the freeVars in p', but not expr
   let singleMissing = (length toInstantiate' == 1)
-  
+
   if not singleMissing then do fail " "
   else
     if not $ (expr /= p') && (instantiate (Free . qVarGetInternalName . head $ toInstantiate') (Sc p) == p')
@@ -103,7 +103,7 @@ mpUniversalHypsM = do
 
 -- TO-DO: could there be issues of alpha equivalence here? I think it's fine for now, but if we somehow did end up with two alpha equivalent hypotheses this might need thinking about
 
--- | If there is a SINGLE target of the form 
+-- | If there is a SINGLE target of the form
 -- Currently doesn't deal with multiple targets, as in this case we need to create a new box
 -- Perhaps we will always take the approach of splitting any multiple-target box into multiple boxes
 
@@ -115,7 +115,7 @@ tidyImplInTargM :: BoxMoveM ()
 tidyImplInTargM = do
   (Implies p q, freeVars) <- getTarg
   Box hyps targs <- getBoxM
-  
+
   if length targs /= 1 then do fail ""
   else do
     updateTarg (Implies p q, freeVars) (q, freeVars)
@@ -131,7 +131,7 @@ getFreeVars expr = []
 -- The poset structure must be updated when this occurs. Namely, all of the variables which had to come after the free variable now have to come after the extra ones.
 instantiateExistential :: Expr -> QuantifiedVariable -> BoxMoveM ()
 instantiateExistential expr qVar = do
-  
+
   return ()
 
 

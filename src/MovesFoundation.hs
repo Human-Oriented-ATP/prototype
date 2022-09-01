@@ -2,7 +2,7 @@
 {-# HLINT ignore "Use first" #-}
 module MovesFoundation where
 
-import ExpressionFoundation
+import Lib
 import TableauFoundation
 import Poset
 import Data.Maybe
@@ -102,23 +102,23 @@ updateTarg oldTarg newTarg = BoxMoveM $ \(head, Box hyps targs) ->
   [((), (head, Box hyps (newTarg:delete oldTarg targs)))]
 
 -- | Takes a list of InternalNames that have already been used and finds a new one
-getNewInternalName :: [InternalName] -> VariableType -> InternalName
-getNewInternalName usedNames varType = (varType, (+1) $ maxWithEmpty . map snd $ filter (\(t, n) -> t == varType) usedNames)
+getNewInternalName :: [InternalName] -> InternalName
+getNewInternalName usedNames =
+  [("", ((+1) $ maxWithEmpty . map snd $ usedNames))]
   where
     maxWithEmpty :: [Int] -> Int
     maxWithEmpty [] = -1
     maxWithEmpty list = maximum list
 
 -- | Given a VariableType, retreives a fresh InternalName for it
-getNewInternalNameM :: VariableType -> BoxMoveM InternalName
+getNewInternalNameM :: BoxMoveM InternalName
 getNewInternalNameM varType = BoxMoveM $ \hBox@(TableauHead grave qZone deps, box) ->
   let newName = getNewInternalName (map qVarGetInternalName $ getSet deps) varType
   in [(newName, hBox)]
 
 -- | Retrieves the current TableauHead
 getHeadM :: BoxMoveM TableauHead
-getHeadM = BoxMoveM $ \(head, box) ->
-  [(head, (head, box))]
+getHeadM = BoxMoveM $ \(head, box) -> [(head, (head, box))]
 
 -- | Retrieves the current Box
 getBoxM :: BoxMoveM Box

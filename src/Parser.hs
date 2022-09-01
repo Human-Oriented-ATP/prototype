@@ -2,6 +2,8 @@
 A parser for a basic Lisp-like syntax into an internal expression.
 -}
 {-# LANGUAGE FlexibleContexts #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# HLINT ignore "Use <$>" #-}
 
 module Parser where
 
@@ -15,7 +17,10 @@ import Text.Megaparsec
 import Text.Megaparsec.Char
 import qualified Data.HashMap.Strict as M
 
-import Lib
+import Debug.Trace
+
+import ExpressionFoundation
+import PPrinting
 
 -- Uses megaparsec with a custom state to keep track of local bindings
 -- See https://markkarpov.com/tutorial/megaparsec.html for a tutorial on
@@ -37,11 +42,11 @@ exampleStrings =
       -- test more complex application
   , "not(eq(succ(zero), zero))"
       -- test n-ary application
-  , "forall x, not(eq(succ(zero), zero))"
+  , "forall x:TopSpace, not(eq(succ(zero), zero))"
       -- test binders
-  , "forall x, not(eq(succ(x), zero))"
+  , "forall x:TopSpace, not(eq(succ(x), zero))"
       -- test binding (peano one)
-  , "forall x, forall y, implies(eq(succ(x), succ(y)), eq(x, y))"
+  , "forall x:TopSpace, forall y:Point, implies(eq(succ(x), succ(y)), eq(x, y))"
       -- test multiple binding (peano two)
   ]
 
@@ -77,8 +82,10 @@ registerIdent :: MonadState (HashMap String InternalName, Int) m
               => String -> m InternalName
 registerIdent s = do
   (m, i) <- get
-  put (M.insert s [("parser", i)] m, i + 1)
-  return [("parser", i)]
+  put (M.insert s (TPoint, i) m, i + 1)
+  return (TPoint, i)
+
+
 
 -- | Parse a forall expression
 parseForall :: Parser Expr
@@ -86,10 +93,12 @@ parseForall = do
   _ <- string "forall "
   i <- parseIdent
   nm <- registerIdent i
+  _ <- string ":"
+  varType <- parseIdent
     -- ^ it's important that this runs before the e <- parseExpr
   _ <- string ", "
   e <- parseExpr
-  return (forall (Just (ExternalName i)) nm e)
+  return (forall (Just (ExternalName i))  (read ('T':varType)) nm e)
 
 -- | Parse a free variable (must be known from the context)
 parseFree :: Parser Expr
@@ -130,3 +139,15 @@ parseSimple p inp =
   case evalState (runParserT p "example" inp) (M.empty, 0) of
     Left _ -> Nothing
     Right x -> Just x
+
+-- | Run the examples.
+runExamples :: IO ()
+runExamples = for_ exampleStrings $ \test -> do
+  putStrLn $ "Running test case: " ++ test
+  case evalState (runParserT (parseExpr <* eof) "example" test) (M.empty, 0) of
+    Left e -> putStr (errorBundlePretty e)
+    Right x -> do
+      putStr "Internal expression: "
+      print x
+      putStrLn $ "Pretty printed expression: " ++ pprintExpr x
+      putStr "\n"

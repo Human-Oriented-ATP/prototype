@@ -209,3 +209,7 @@ pprintE' n (e1 :$ e2) = pprintE' n e1 ++ "(" ++ pprintE' n e2 ++ ")"
 pprintE' n e = case (Empty :< ("x", n)) <-- e of
   Just (bd, e2) -> "∀ (" ++ pprintB' (n+1) bd ++ "), " ++ pprintE' (n+1) e2
   Nothing -> "failed"
+
+pprintP' :: Prefix -> String
+pprintP' Empty = ""
+pprintP' (ys :< y) = pprintP' ys ++ pprintB' 0 y

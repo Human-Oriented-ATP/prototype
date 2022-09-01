@@ -130,15 +130,3 @@ parseSimple p inp =
   case evalState (runParserT p "example" inp) (M.empty, 0) of
     Left _ -> Nothing
     Right x -> Just x
-
--- | Run the examples.
-runExamples :: IO ()
-runExamples = for_ exampleStrings $ \test -> do
-  putStrLn $ "Running test case: " ++ test
-  case evalState (runParserT (parseExpr <* eof) "example" test) (M.empty, 0) of
-    Left e -> putStr (errorBundlePretty e)
-    Right x -> do
-      putStr "Internal expression: "
-      print x
-      putStrLn $ "Pretty printed expression: " ++ pprintExpr x
-      putStr "\n"

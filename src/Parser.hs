@@ -19,7 +19,7 @@ import qualified Data.HashMap.Strict as M
 
 import Debug.Trace
 
-import ExpressionFoundation
+import Lib
 import PPrinting
 
 -- Uses megaparsec with a custom state to keep track of local bindings
@@ -82,8 +82,8 @@ registerIdent :: MonadState (HashMap String InternalName, Int) m
               => String -> m InternalName
 registerIdent s = do
   (m, i) <- get
-  put (M.insert s (TPoint, i) m, i + 1)
-  return (TPoint, i)
+  put (M.insert s i m, i + 1)
+  return i
 
 
 
@@ -98,7 +98,7 @@ parseForall = do
     -- ^ it's important that this runs before the e <- parseExpr
   _ <- string ", "
   e <- parseExpr
-  return (forall (Just (ExternalName i))  (read ('T':varType)) nm e)
+  return (forall (Just (ExternalName i)) nm e)
 
 -- | Parse a free variable (must be known from the context)
 parseFree :: Parser Expr

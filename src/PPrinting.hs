@@ -30,7 +30,7 @@ data PrintingState = PS
 getSuggestion' :: ExternalName -> State PrintingState (InternalName, ExternalName)
 getSuggestion' x = do
   PS m s n <- get
-  let r = (TPoint, n)
+  let r = n
   put (PS (M.insert r x m) (S.insert x s) (n+1))
   return (r, x)
 
@@ -53,16 +53,16 @@ getSuggestion x = do
      then getFresh
      else getSuggestion' x
 
-pprintBinderM :: String -> VariableType -> Maybe ExternalName -> Scoped -> State PrintingState String
-pprintBinderM b varType sug sc = do
+pprintBinderM :: String -> Maybe ExternalName -> Scoped -> State PrintingState String
+pprintBinderM b sug sc = do
   (m, ExternalName sug') <- maybe getFresh getSuggestion sug
   s <- pprintExprM $ instantiate (Free m) sc
-  return $ b ++ sug' ++ ":" ++ tail (show varType) ++ ", " ++ s
+  return $ b ++ sug' ++ ", " ++ s
 
 pprintExprM :: Expr -> State PrintingState String
 -- special patterns (all these must come first!)
-pprintExprM (Forall sug varType sc) = pprintBinderM "\8704" varType sug sc
-pprintExprM (Exists sug varType sc) = pprintBinderM "\8707" varType sug sc
+pprintExprM (Forall sug sc) = pprintBinderM "\8704" sug sc
+pprintExprM (Exists sug sc) = pprintBinderM "\8707" sug sc
 -- general patterns
 pprintExprM t@(App _ _) = do
   let (f, x) = getAppChain t
@@ -73,7 +73,7 @@ pprintExprM (Free x) = do
   (PS m _ _) <- get
   return $ getExternalName $ m M.! x
 pprintExprM (Con s) = return s
-pprintExprM (Abs sug varType sc) = pprintBinderM "λ" varType sug sc
+pprintExprM (Abs sug sc) = pprintBinderM "λ" sug sc
 pprintExprM (B _) = error "term not closed"
 
 
@@ -96,7 +96,7 @@ orderQuantifiers head@(TableauHead grave qZone deps) = grave ++ orderQZoneQuanti
 getStartingPrintState :: TableauHead -> PrintingState -> PrintingState
 getStartingPrintState (TableauHead _ _ (Poset [] _)) state = state -- if there are no quantified variables in the head, we have nothing to do
 getStartingPrintState (TableauHead _ _ deps) (PS showMap usedNames counter) = let
-  (qVar@(QVar quantifier exNm inNm varType):xs) = getSet deps
+  (qVar@(QVar quantifier exNm inNm):xs) = getSet deps
   newHead = TableauHead [] [] (Poset xs [])
   useInNm = findExNameFromInName usedNames inNm
   name = case exNm of
@@ -109,25 +109,7 @@ getStartingPrintState (TableauHead _ _ deps) (PS showMap usedNames counter) = le
 
 -- | Takes a HashSet of used ExternalName's, and an InternalName, and generates a unique ExternalName for this
 findExNameFromInName :: HashSet ExternalName -> InternalName -> ExternalName
-findExNameFromInName usedNames varType =
-  let
-    alph = case varType of
-      (TReal, _) -> reals
-      (TNatural, _) -> naturals
-      (TPoint, _) -> points
-      (TSet, _) -> sets
-      (TTopSpace, _) -> topSpaces
-      (TFunction, _) -> functions
-      (TProperty, _) -> properties
-      where
-        reals = ["ε", "δ", "θ", "η", "ζ"]
-        naturals = ["n", "m", "k", "l", "i", "j"]
-        points = ["x", "y", "z", "u", "v", "w"]
-        sets = ["A", "B", "C", "D", "E"]
-        topSpaces = ["X", "Y", "Z"]
-        functions = ["f", "g", "h"]
-        properties = ["P", "Q", "R"]
-
+findExNameFromInName usedNames inNm = let alph = map (\c -> [c]) ['a'..'z']
   in unusedNameFromOptions usedNames (basicNamesFromAlphabet alph)
 
 unusedNameFromOptions :: HashSet ExternalName -> [ExternalName] -> ExternalName
@@ -147,7 +129,7 @@ pprintExpr e = evalState (pprintExprM e) (PS mempty mempty 0)
 showHeadWithNames :: HashMap InternalName ExternalName -> TableauHead -> String
 showHeadWithNames showMap head@(TableauHead grave qZone (Poset set rel)) = let
   dealWithEmpty str = if str /= "" then str else "(empty)"
-  qListToStr = dealWithEmpty . intercalate ", " . map (\qVar -> (if qVarGetQuantifier qVar == "Forall" then "\8704" else "\8707") ++ getExternalName (showMap M.! qVarGetInternalName qVar) ++ ":" ++ tail (show (qVarGetVarType qVar)))
+  qListToStr = dealWithEmpty . intercalate ", " . map (\qVar -> (if qVarGetQuantifier qVar == "Forall" then "\8704" else "\8707") ++ getExternalName (showMap M.! qVarGetInternalName qVar))
   graveStr = qListToStr grave
   qZoneStr = qListToStr $ orderQZoneQuantifiers head
   depsStr = dealWithEmpty . intercalate ", " $ map (\(q1, q2) -> getExternalName (showMap M.! qVarGetInternalName q1) ++ "<" ++ getExternalName (showMap M.! qVarGetInternalName q2)) rel
@@ -174,7 +156,7 @@ pprintHBox (head, Box hyps targs) = let
 -- <<<< TESTING AREA FOR MOVES >>>>
 
 -- Peeling targets
-at1 = exists (Just $ ExternalName "x") TNatural (TNatural, 0) (forall (Just $ ExternalName "y") TNatural (TNatural, 0) (exists (Just $ ExternalName "z") TNatural (TNatural, 1) (Eq (Free (TNatural, 0)) (Free (TNatural, 1)))))
+at1 = exists (Just $ ExternalName "x") 0 (forall (Just $ ExternalName "y") 0 (exists (Just $ ExternalName "z") 1 (Eq (Free 0) (Free 1))))
 aBox = Box [] [(at1, [])]
 aHead = TableauHead [] [] (Poset [] [])
 aHBox = (aHead, aBox)
@@ -183,13 +165,13 @@ aStr = pprintHBox aResult
 
 
 -- Universal modus ponens with hyp
-bh1 = forall (Just $ ExternalName "x") TNatural (TNatural, 0) $
-    Implies (Eq (UApp "succ" (Free (TNatural, 0))) (Con "1")) (Eq (Free (TNatural, 0)) (Con "0"))
+bh1 = forall (Just $ ExternalName "x") 0 $
+    Implies (Eq (UApp "succ" (Free 0)) (Con "1")) (Eq (Free 0) (Con "0"))
 
-bh2= Eq (UApp "succ" (Free (TNatural, 1))) (Con "1")
+bh2= Eq (UApp "succ" (Free 1)) (Con "1")
 
-bTestHead = TableauHead [QVar "Forall" (Just $ ExternalName "y") (TNatural, 1) TNatural] [] (Poset [QVar "Forall" (Just $ ExternalName "y") (TNatural, 1) TNatural] [])
-bTestBox = Box [(bh1, []), (bh2, [QVar "Forall" (Just $ ExternalName "y") (TNatural, 1) TNatural])] []
+bTestHead = TableauHead [QVar "Forall" (Just $ ExternalName "y") 1] [] (Poset [QVar "Forall" (Just $ ExternalName "y") 1] [])
+bTestBox = Box [(bh1, []), (bh2, [QVar "Forall" (Just $ ExternalName "y") 1])] []
 bTestHBox = (bTestHead, bTestBox)
 bResult = head $ mpUniversalHypsBox bTestHBox
 bBeforeStr = pprintHBox bTestHBox
@@ -197,10 +179,27 @@ bStr = pprintHBox bResult
 
 
 -- Implication in target tidy
-ct1 = Implies (Eq (UApp "succ" (Free (TNatural, 0))) (UApp "succ" (Free (TNatural, 1)))) (Eq (Free (TNatural, 0)) (Free (TNatural, 1)))
-cTestHead = TableauHead [QVar "Forall" (Just $ ExternalName "x") (TNatural, 0) TNatural, QVar "Forall" (Just $ ExternalName "y") (TNatural, 1) TNatural] [] (Poset [QVar "Forall" (Just $ ExternalName "x") (TNatural, 0) TNatural, QVar "Forall" (Just $ ExternalName "y") (TNatural, 1) TNatural] [])
-cTestBox = Box [] [(ct1, [QVar "Forall" (Just $ ExternalName "x") (TNatural, 0) TNatural, QVar "Forall" (Just $ ExternalName "y") (TNatural, 1) TNatural])]
+ct1 = Implies (Eq (UApp "succ" (Free 0)) (UApp "succ" (Free 1))) (Eq (Free 0) (Free 1))
+cTestHead = TableauHead [QVar "Forall" (Just $ ExternalName "x") 0, QVar "Forall" (Just $ ExternalName "y") 1] [] (Poset [QVar "Forall" (Just $ ExternalName "x") 0, QVar "Forall" (Just $ ExternalName "y") 1] [])
+cTestBox = Box [] [(ct1, [QVar "Forall" (Just $ ExternalName "x") 0, QVar "Forall" (Just $ ExternalName "y") 1])]
 cTestHBox = (cTestHead, cTestBox)
 cResult = head $ tidyImplInTargBox cTestHBox
 cStr = pprintHBox cResult
 
+
+-- Intersection of open sets is open
+dt1 = forall (Just $ ExternalName "M") 0 $
+      forall (Just $ ExternalName  "U") 1 $
+      forall (Just $ ExternalName "V") 2 $
+      Implies
+      (And
+        (BApp "open" (Free 1) (Free 0))
+        (BApp "open" (Free 2) (Free 0)))
+      (BApp "open" (BApp "intersection" (Free 1) (Free 2)) (Free 0))
+
+dBox = Box [] [(dt1, [])]
+dHead = TableauHead [] [] (Poset [] [])
+dHBox = (aHead, dBox)
+
+dResult1 = head $ peelUniversalTargBox dHBox >>= peelUniversalTargBox >>= peelUniversalTargBox >>= tidyImplInTargBox >>= splitConjHypBox
+dStr = pprintHBox dResult1

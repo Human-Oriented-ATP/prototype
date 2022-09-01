@@ -21,7 +21,7 @@ import Data.List
 newtype ExternalName = ExternalName { getExternalName :: String }
   deriving (Eq, Ord, Show, Hashable)
 
-type InternalName = [(String, Int)]
+type InternalName = Int
 
 -- For convenience
 instance IsString ExternalName where
@@ -156,71 +156,21 @@ type Agency t = InternalName -> t
 enterForall :: Agency (Expr -> Maybe (Maybe ExternalName, Expr))
 enterForall root e = instantiateForall e (Free root)
 
+-- NOTE: For now, using integers as InternalNames, this will need a global context to work. Can fix this with the 'interaction monad' idea, or can switch to lists for InternalName's if preferable.
+{-
 swapForalls :: Agency (Expr -> Maybe Expr)
 swapForalls root e = do
   (x0, first)  <- enterForall (("x", 0) : root) e
   (x1, second) <- enterForall (("x", 1) : root) first
   return $ forall x1 (("x", 1) : root) (forall x0 (("x", 0) : root) second)
+-}
 
+-- This could be wrong now that InternalName's are integers
 unsafeRunAgency :: Agency t -> t
-unsafeRunAgency x = x []
+unsafeRunAgency x = x 0
 
-data PrintingState = PS
-  { showMap :: HashMap InternalName ExternalName
-  , usedNames :: HashSet ExternalName
-  , counter :: Int
-  }
 
-getSuggestion' :: ExternalName -> State PrintingState (InternalName, ExternalName)
-getSuggestion' x = do
-  PS m s n <- get
-  let r = [("printing", n)]
-  put (PS (M.insert r x m) (S.insert x s) (n+1))
-  return (r, x)
-
-basicNames :: [ExternalName]
-basicNames = [ExternalName (x : replicate n '\'') | n <- [0..], x <- alph]
-  where alph = "abcdefghijklmnopqrstuvwxyz"
-
-unusedName :: HashSet ExternalName -> ExternalName
-unusedName s = head $ filter (not . (`S.member` s)) basicNames
-
-getFresh :: State PrintingState (InternalName, ExternalName)
-getFresh = do
-  (PS _ u _) <- get
-  getSuggestion' (unusedName u)
-
-getSuggestion :: ExternalName -> State PrintingState (InternalName, ExternalName)
-getSuggestion x = do
-  (PS _ y _) <- get
-  if x `S.member` y
-     then getFresh
-     else getSuggestion' x
-
-pprintBinderM :: String -> Maybe ExternalName -> Scoped -> State PrintingState String
-pprintBinderM b sug sc = do
-  (m, ExternalName sug') <- maybe getFresh getSuggestion sug
-  s <- pprintExprM $ instantiate (Free m) sc
-  return $ b ++ sug' ++ ", " ++ s
-
-pprintExprM :: Expr -> State PrintingState String
--- special patterns (all these must come first!)
-pprintExprM (Forall sug sc) = pprintBinderM "∀" sug sc
--- general patterns
-pprintExprM t@(App _ _) = do
-  let (f, x) = getAppChain t
-  fs <- pprintExprM f
-  xs <- traverse pprintExprM (reverse x)
-  return $ fs ++ "(" ++ intercalate ", " xs ++ ")"
-pprintExprM (Free x) = do
-  (PS m _ _) <- get
-  return $ getExternalName $ m M.! x
-pprintExprM (Con s) = return s
-pprintExprM (Abs sug sc) = pprintBinderM "λ" sug sc
-pprintExprM (B _) = error "term not closed"
-
-pprintExpr :: Expr -> String
-pprintExpr e = evalState (pprintExprM e) (PS mempty mempty 0)
+-- Moved pretty printing stuff to the PPrinting Module
 
 -- | Nothing right now.
 someFunc :: IO ()

@@ -7,12 +7,13 @@ import Text.Megaparsec
 
 import Lib
 import Parser
-import Problem
-import Zipper
+--import Problem
+--import Zipper
 
 -- | Run the parsing examples.
-runExamples :: IO ()
-runExamples = for_ exampleStrings $ \test -> do
+{-
+runExamplesMain :: IO ()
+runExamplesMain = for_ exampleStrings $ \test -> do
   putStrLn $ "Running test case: " ++ test
   case evalState (runParserT (parseExpr <* eof) "example" test) (mempty, 0) of
     Left e -> putStr (errorBundlePretty e)
@@ -21,7 +22,6 @@ runExamples = for_ exampleStrings $ \test -> do
       print x
       putStrLn $ "Pretty printed expression: " ++ pprintExpr x
       putStr "\n"
-
+-}
 main :: IO ()
-main = runExamples
-
+main = return ()

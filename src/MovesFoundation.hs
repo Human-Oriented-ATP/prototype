@@ -90,6 +90,15 @@ addTarg :: (Expr, [QuantifiedVariable]) -> BoxMoveM ()
 addTarg targ = BoxMoveM $ \(head, Box hyps targs) ->
   [((), (head, Box hyps (targ:targs)))]
 
+-- | Gets nothing, removes hypothesis
+removeHyp :: Hyp -> BoxMoveM ()
+removeHyp hyp = BoxMoveM $ \(head, Box hyps targs) ->
+  [((), (head, Box (delete hyp hyps) targs))]
+
+removeTarg :: Targ -> BoxMoveM ()
+removeTarg targ = BoxMoveM $ \(head, Box hyps targs) ->
+  [((), (head, Box hyps (delete targ targs)))]
+
 -- | updateHyp (e, f) (e', f') deletes the first occurence of the hypothesis (e, f) and adds (e', f')
 -- This may have unexpected behaviour if there are multiple occurences of the same hypothesis in a box (which hopefully shouldn't happen)
 -- or if no hypothesis of a particular form when we expected one (also shouldn't happen if used in conjunction with getHypothesis)
@@ -103,8 +112,7 @@ updateTarg oldTarg newTarg = BoxMoveM $ \(head, Box hyps targs) ->
 
 -- | Takes a list of InternalNames that have already been used and finds a new one
 getNewInternalName :: [InternalName] -> InternalName
-getNewInternalName usedNames =
-  [("", ((+1) $ maxWithEmpty . map snd $ usedNames))]
+getNewInternalName usedNames = maxWithEmpty usedNames + 1
   where
     maxWithEmpty :: [Int] -> Int
     maxWithEmpty [] = -1
@@ -112,8 +120,8 @@ getNewInternalName usedNames =
 
 -- | Given a VariableType, retreives a fresh InternalName for it
 getNewInternalNameM :: BoxMoveM InternalName
-getNewInternalNameM varType = BoxMoveM $ \hBox@(TableauHead grave qZone deps, box) ->
-  let newName = getNewInternalName (map qVarGetInternalName $ getSet deps) varType
+getNewInternalNameM = BoxMoveM $ \hBox@(TableauHead grave qZone deps, box) ->
+  let newName = getNewInternalName (map qVarGetInternalName $ getSet deps)
   in [(newName, hBox)]
 
 -- | Retrieves the current TableauHead

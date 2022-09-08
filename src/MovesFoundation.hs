@@ -1,3 +1,7 @@
+{-
+OLD
+-}
+
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Use first" #-}
 module MovesFoundation where
@@ -8,6 +12,7 @@ import Poset
 import Data.Maybe
 import Data.List
 
+{-
 
 -- TO-DO: Again, pretty sure there is a more abstract function which takes care of the various peeling/metavariable creation rules. Not going to mess around with this for now, but there may be some genuinely interesting theoretical points here, anyway.
 
@@ -120,7 +125,7 @@ getNewInternalName usedNames = maxWithEmpty usedNames + 1
 
 -- | Given a VariableType, retreives a fresh InternalName for it
 getNewInternalNameM :: BoxMoveM InternalName
-getNewInternalNameM = BoxMoveM $ \hBox@(TableauHead grave qZone deps, box) ->
+getNewInternalNameM = BoxMoveM $ \hBox@(deps, box) ->
   let newName = getNewInternalName (map qVarGetInternalName $ getSet deps)
   in [(newName, hBox)]
 
@@ -139,14 +144,14 @@ getHBoxM = BoxMoveM $ \(head, box) -> [((head, box), (head, box))]
 -- | Adds variable to the QZone list with dependencies.
 -- We do this as a single function, as this avoid the risk of adding a Qvar to the QZone, but the subsequent dependency-adding move failing. If the latter fails, so should the former.
 addToQZoneWithDeps :: QuantifiedVariable -> [(QuantifiedVariable, QuantifiedVariable)] -> BoxMoveM ()
-addToQZoneWithDeps qVar newRels = BoxMoveM $ \(head@(TableauHead grave qZone deps@(Poset set rel)), box) ->
+addToQZoneWithDeps qVar newRels = BoxMoveM $ \(head@(deps@(Poset set rel)), box) ->
   let newDeps = addRels (addSetMember deps qVar) newRels
   in case newDeps of
     Nothing -> [] -- If trying to add the newRelations doesn't form a poset, we just do nothing
     Just x -> [((), (TableauHead grave (qVar:qZone) x, box))]
 
 addToGraveWithDeps :: QuantifiedVariable -> [(QuantifiedVariable, QuantifiedVariable)] -> BoxMoveM ()
-addToGraveWithDeps qVar newRels = BoxMoveM $ \(head@(TableauHead grave qZone deps@(Poset set rel)), box) ->
+addToGraveWithDeps qVar newRels = BoxMoveM $ \(head@(deps@(Poset set rel)), box) ->
   let newDeps = addRels (addSetMember deps qVar) newRels
   in case newDeps of
     Nothing -> [] -- If trying to add the newRelations doesn't form a poset, we just do nothing
@@ -154,16 +159,16 @@ addToGraveWithDeps qVar newRels = BoxMoveM $ \(head@(TableauHead grave qZone dep
 
 -- | Simply adds dependencies to the poset structure
 addDeps :: [(QuantifiedVariable, QuantifiedVariable)] -> BoxMoveM ()
-addDeps newRels = BoxMoveM $ \(head@(TableauHead grave qZone deps@(Poset set rel)), box) ->
+addDeps newRels = BoxMoveM $ \(head@(deps@(Poset set rel)), box) ->
   let newDeps = addRels deps newRels
   in case newDeps of
     Nothing -> [] -- If trying to add the newRelations doesn't form a poset, we return the failing value, []
-    Just x -> [((), (TableauHead grave qZone x, box))]
+    Just x -> [((), (x, box))]
 
 -- | Returns what would happen if we added dependencies without actually doing anything.
 -- This is useful in peeling, when we need to know whether a variable can be peeled fully or not, and then perform the appropriate peel.
 addDepsHypothetical :: [(QuantifiedVariable, QuantifiedVariable)] -> BoxMoveM (Poset QuantifiedVariable)
-addDepsHypothetical newRels = BoxMoveM $ \(head@(TableauHead grave qZone deps), box) ->
+addDepsHypothetical newRels = BoxMoveM $ \(head@(deps), box) ->
   let newDeps = addRels deps newRels
   in case newDeps of
     Nothing -> [] -- If trying to add the newRelations doesn't form a poset, we just do nothing
@@ -234,3 +239,6 @@ exprMoveToBoxMoveTarg :: ExprMove -> BoxMove
 exprMoveToBoxMoveTarg exprMove (head, box@(Box hyps targs)) = mapMaybe (exprMoveOnTargIndex exprMove (head, box)) [0..(length targs-1)]
 
 -- TO-DO: Pretty sure there is a more abstract function which takes care of all of these functions, but not sure it's worth writing given this is all we need for now.
+
+
+-}

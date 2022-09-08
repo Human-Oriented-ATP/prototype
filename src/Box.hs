@@ -1,5 +1,5 @@
 {-
-Tableau implementation of foundations building on Bhavik's implementation for FOL expressions from the Org Github
+OLD
 -}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Redundant bracket" #-}
@@ -13,6 +13,8 @@ import MovesFoundation
 
 import Data.List
 
+{-
+
 -- <<<< PEELING >>>>
 -- | Peels a universal target (all the way to Grave if possible, otherwise to QZone)
 peelUniversalTargBoxM :: BoxMoveM ()
@@ -23,7 +25,7 @@ peelUniversalTargBoxM = do
 
   let newDeps = [(y, quantifiedVar) | y <- freeVars]
   posetAfterAdding <- addDepsHypothetical newDeps -- Note if this fails, the value will be [], which will stop the move from doing anything
-  (TableauHead grave qZone head) <- getHeadM
+  (head) <- getHeadM
   let isFullPeel = and [not $ isBefore posetAfterAdding y quantifiedVar | y <- qZone]
 
   updateTarg (expr, freeVars) (instantiate (Free peeledName) sc, quantifiedVar:freeVars)
@@ -52,7 +54,7 @@ peelExistentialHypBoxM = do
 
   let newDeps = [(y, quantifiedVar) | y <- freeVars]
   posetAfterAdding <- addDepsHypothetical newDeps -- Note if this fails, the value will be [], which will stop the move from doing anything
-  (TableauHead grave qZone head) <- getHeadM
+  (head) <- getHeadM
   let isFullPeel = and [not $ isBefore posetAfterAdding y quantifiedVar | y <- qZone]
 
   updateHyp (expr, freeVars) (instantiate (Free peeledName) sc, quantifiedVar:freeVars)
@@ -178,7 +180,7 @@ expandTargM :: Expr -> Expr -> BoxMoveM ()
 expandTargM t1 t2 = do
   let t1Free = getFreeVars t1
   let t2Free = getFreeVars t2
-  (TableauHead grave qZone (Poset set rel)) <- getHeadM
+  ((Poset set rel)) <- getHeadM
   let t1FreeQVars = map (\inNm -> (head $ filter (\qVar -> qVarGetInternalName qVar == inNm) set)) t1Free -- very inefficient. Will probably change data structure later, there's probably no need to store free variables as QuantifiedVariable's (just use InternalName's). If so, we should probably be storing a HashMap mapping InternalName to QVar?
   let t2FreeQVars = map (\inNm -> (head $ filter (\qVar -> qVarGetInternalName qVar == inNm) set)) t2Free
 
@@ -259,7 +261,7 @@ expandTarg t1 t2 = boxMoveToMove $ expandTargBox t1 t2
 -- | The peeled variable is added to the free variables in the resulting expression, and we insist that the peeled variable come after all free variables that were already in it pre-peel.
 -- | In terms of getting "as much commutation as possible", this can be improved by searching for more subtle rules, like if variables appear in separate parts of a conjunction.
 peelUniversalTargetExpr :: ExprMove
-peelUniversalTargetExpr (TableauHead grave qZone deps, (Forall exNm sc, freeVars)) = do
+peelUniversalTargetExpr (deps, (Forall exNm sc, freeVars)) = do
     let peeledName = getNewInternalName (map qVarGetInternalName $ getSet deps)
     let quantifiedVar = QVar "Forall" exNm peeledName
     newDeps <- addRels (addSetMember deps quantifiedVar) [(y, quantifiedVar) | y <- freeVars]  -- Add deps y < quantifiedVar for every y in freeVars
@@ -273,7 +275,7 @@ peelUniversalTargetExpr _ = Nothing
 
 
 peelExistentialTargetExpr :: ExprMove
-peelExistentialTargetExpr (TableauHead grave qZone deps, (Exists exNm sc, freeVars)) = do
+peelExistentialTargetExpr (deps, (Exists exNm sc, freeVars)) = do
     let peeledName = getNewInternalName (map qVarGetInternalName $ getSet deps)
     let quantifiedVar = QVar "Exists" exNm peeledName
     newDeps <- addRels (addSetMember deps quantifiedVar) [(y, quantifiedVar) | y <- freeVars]  -- Add deps y < quantifiedVar for every y in freeVars
@@ -289,3 +291,5 @@ peelExistentialTargetExpr _ = Nothing
 
 someFunc :: IO ()
 someFunc = putStrLn "someFunc"
+
+-}

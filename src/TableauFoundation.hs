@@ -20,17 +20,11 @@ instance Show QuantifiedVariable where
     "Exists" -> "\8707" ++ show inNm
     x -> "." ++ show inNm
 
--- | Graveyard and quantification zone.
-type Grave = [QuantifiedVariable]
-type QZone = [QuantifiedVariable]
+-- | The part of tableau storing peeled quantification inforamtion.
+type QZone = Poset QuantifiedVariable
 
--- | The part of tableau storing peeled quantification inforamtion (including Poset info on order of quantification).
-data TableauHead = TableauHead {getGrave :: Grave,
-                                getQZone :: QZone,
-                                getDeps :: Poset QuantifiedVariable}
-
-instance Show TableauHead where
-  show (TableauHead grave qZone (Poset set rel)) = "Grave: " ++ show grave ++ "\n" ++ "QZone: " ++ show qZone ++ "\n" ++ "Deps: " ++ show rel ++ "\n"
+instance Show a => Show (Poset a) where
+  show (Poset set rel) = "QZone: " ++ show set ++ "\n" ++ "Deps: " ++ show rel ++ "\n"
 
 instance Show Tableau where
   show (Tableau head boxes) = show head ++ intercalate "\n" (map show boxes)
@@ -47,9 +41,9 @@ data Box = Box {getHyps :: [Hyp],
                 getTargs :: [Targ]} deriving (Show)
 
 -- | Other than closed expressions, this is the minimum natural object on which moves can act
-type HBox = (TableauHead, Box)
+type QBox = (QZone, Box)
 
 -- | The final product - Tableau's. The only difference with HBox's is that there may be multiple Box's.
 -- At the moment, I'm thinking of different Box's as being more or less independent, but it seems useful to build in the capacity to have many.
-data Tableau = Tableau {getHead :: TableauHead,
+data Tableau = Tableau {getQZone :: QZone,
                         getBoxes :: [Box]}

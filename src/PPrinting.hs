@@ -162,3 +162,9 @@ rawPrintQBox (qZone, Box hyps targs) = let
     "---- Targs ----\n" ++
     dealWithEmpty ( intercalate "\n" (zipWith (\a b -> a ++ ": " ++ b) (map show [0..]) $ map show targs) )
 
+
+pprintTab :: Tableau -> String
+pprintTab (Tableau qZone boxes) = intercalate "\n\n" (map (\box -> pprintQBox (qZone, box)) boxes)
+
+rawPrintTab :: Tableau -> String
+rawPrintTab (Tableau qZone boxes) = intercalate "\n\n" (map (\box -> rawPrintQBox (qZone, box)) boxes)

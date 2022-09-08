@@ -89,8 +89,8 @@ orderQZone qZone@(Poset set rel) = let
 -- (e.g. if a variable is quantified over, it should appear in the usedNames, and have a showMap entry)
 getStartingPrintState :: QZone -> PrintingState -> PrintingState
 getStartingPrintState (Poset [] _) state = state -- if there are no quantified variables in the QZone, we have nothing to do
-getStartingPrintState qZone (PS showMap usedNames counter) = let
-  (qVar@(QVar quantifier exNm inNm):xs) = getSet qZone
+getStartingPrintState qZone@(Poset set rel) (PS showMap usedNames counter) = let
+  (qVar@(QVar quantifier exNm inNm):xs) = set
   newQZone = Poset xs []
   useInNm = findExNameFromInName usedNames inNm
   name = case exNm of
@@ -98,7 +98,7 @@ getStartingPrintState qZone (PS showMap usedNames counter) = let
     Nothing -> useInNm
   newMap = M.insert inNm name showMap
   newUsedNames = S.insert name usedNames
-  newState = PS newMap newUsedNames 0
+  newState = PS newMap newUsedNames (max (counter + 1) (maximum (map qVarGetInternalName set)))
   in getStartingPrintState newQZone newState
 
 -- | Takes a HashSet of used ExternalName's, and an InternalName, and generates a unique ExternalName for this
@@ -128,6 +128,14 @@ showQZoneWithNames showMap qZone@(Poset set rel) = let
   depsStr = dealWithEmpty . intercalate ", " $ map (\(q1, q2) -> getExternalName (showMap M.! qVarGetInternalName q1) ++ "<" ++ getExternalName (showMap M.! qVarGetInternalName q2)) rel
   in "QZone: " ++ qZoneStr ++ "\n" ++ "Deps: " ++ depsStr ++ "\n"
 
+showQZoneWithNamesRaw ::QZone -> String
+showQZoneWithNamesRaw qZone@(Poset set rel) = let
+  dealWithEmpty str = if str /= "" then str else "(empty)"
+  qListToStr = dealWithEmpty . intercalate ", " . map (\qVar -> (if qVarGetQuantifier qVar == "Forall" then "\8704" else "\8707") ++ show (qVarGetInternalName qVar))
+  qZoneStr = qListToStr $ orderQZone qZone
+  depsStr = dealWithEmpty . intercalate ", " $ map (\(q1, q2) ->  show (qVarGetInternalName q1) ++ "<" ++ show (qVarGetInternalName q2)) rel
+  in "QZone: " ++ qZoneStr ++ "\n" ++ "Deps: " ++ depsStr ++ "\n"
+
 
 pprintQBox :: QBox -> String
 pprintQBox (qZone, Box hyps targs) = let
@@ -137,7 +145,20 @@ pprintQBox (qZone, Box hyps targs) = let
     "---- QZone ----\n" ++
     showQZoneWithNames showMap qZone ++
     "---- Hyps ----\n" ++
-    dealWithEmpty ( intercalate "\n" (map (pprintExprWithQZone qZone . fst) hyps) ) ++ "\n" ++
+    dealWithEmpty ( intercalate "\n" (zipWith (\a b -> a ++ ": " ++ b) (map show [0..]) $ map (pprintExprWithQZone qZone . fst) hyps) ) ++ "\n" ++
     "---- Targs ----\n" ++
-    dealWithEmpty ( intercalate "\n" (map (pprintExprWithQZone qZone . fst) targs) )
+    dealWithEmpty ( intercalate "\n" (zipWith (\a b -> a ++ ": " ++ b) (map show [0..]) $ map (pprintExprWithQZone qZone . fst) targs) )
+
+
+rawPrintQBox :: QBox -> String
+rawPrintQBox (qZone, Box hyps targs) = let
+  dealWithEmpty str = if str /= "" then str else "(empty)"
+  PS showMap usedNames counter = getStartingPrintState qZone (PS mempty mempty 0)
+  in
+    "---- QZone ----\n" ++
+    showQZoneWithNamesRaw qZone ++
+    "---- Hyps ----\n" ++
+    dealWithEmpty ( intercalate "\n" (zipWith (\a b -> a ++ ": " ++ b) (map show [0..]) $ map show hyps) ) ++ "\n" ++
+    "---- Targs ----\n" ++
+    dealWithEmpty ( intercalate "\n" (zipWith (\a b -> a ++ ": " ++ b) (map show [0..]) $ map show targs) )
 

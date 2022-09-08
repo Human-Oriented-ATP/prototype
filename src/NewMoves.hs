@@ -39,7 +39,7 @@ getNewInternalName (Poset set rel) = freshName (map qVarGetInternalName set)
     where
         freshName :: [InternalName] -> InternalName
         freshName [] = 0
-        freshName usedNames = 1 + maximum usedNames
+        freshName usedNames = maximum usedNames + 1
 
 -- Although it's inefficient to append to the end of a list, it's far more intuitive to add hypotheses to the end than the start.
 -- This also avoids issues of hypotheses changing index mid-move.
@@ -74,7 +74,14 @@ getTarg i targs
     | i < 0 || i >= length targs = Nothing
     | otherwise = Just $ targs!!i
 
+findFreshExNm :: [ExternalName] -> ExternalName
+findFreshExNm usedNames = head $ filter (`notElem` usedNames) options
+    where options = [ExternalName (x : replicate n '\'') | n <- [0..], x <- ['a'..'z']]
 
+getNewExternalNamePeel :: Maybe ExternalName -> QZone -> Maybe ExternalName
+getNewExternalNamePeel exNm (Poset set rel) = case exNm of
+    Just nm -> if nm `elem` (mapMaybe qVarGetExternalName set) then Just $ findFreshExNm (mapMaybe qVarGetExternalName set) else exNm
+    _ -> Just $ findFreshExNm (mapMaybe qVarGetExternalName set)
 
 -- Peels universal target
 -- targ i : forall x, P(x)
@@ -83,7 +90,8 @@ peelUniversalTarg :: Int -> BoxMove
 peelUniversalTarg i qBox@(qZone, Box hyps targs) = do
     (expr@(Forall exNm sc), freeVars) <- getTarg i targs
     let peeledName = getNewInternalName qZone
-    let peeledVariable = QVar "Forall" exNm peeledName
+    let peeledExternalName = getNewExternalNamePeel exNm qZone
+    let peeledVariable = QVar "Forall" peeledExternalName peeledName
     let newDeps = [(y, peeledVariable) | y <- freeVars]
     newQZone <- addRels (addSetMember qZone peeledVariable) newDeps
     (qZone, newBox) <- updateTarg i (instantiate (Free peeledName) sc, peeledVariable:freeVars) qBox
@@ -95,7 +103,8 @@ peelExistentialTarg :: Int -> BoxMove
 peelExistentialTarg i qBox@(qZone, Box hyps targs) = do
     (expr@(Exists exNm sc), freeVars) <- getTarg i targs
     let peeledName = getNewInternalName qZone
-    let peeledVariable = QVar "Exists" exNm peeledName
+    let peeledExternalName = getNewExternalNamePeel exNm qZone
+    let peeledVariable = QVar "Exists" peeledExternalName peeledName
     let newDeps = [(y, peeledVariable) | y <- freeVars]
     newQZone <- addRels (addSetMember qZone peeledVariable) newDeps
     (qZone, newBox) <- updateTarg i (instantiate (Free peeledName) sc, peeledVariable:freeVars) qBox
@@ -103,11 +112,13 @@ peelExistentialTarg i qBox@(qZone, Box hyps targs) = do
 
 -- Peels existential hypothesis
 -- hyp i : forall x, P(x)
+-- IMPROVEMENT - currently find new external name to prevent confusing outputs after a single move, but maybe this should happen at the print stage? Think about this.
 peelExistentialHyp :: Int -> BoxMove
 peelExistentialHyp i qBox@(qZone, Box hyps targs) = do
     (expr@(Exists exNm sc), freeVars) <- getHyp i hyps
     let peeledName = getNewInternalName qZone
-    let peeledVariable = QVar "Exists" exNm peeledName
+    let peeledExternalName = getNewExternalNamePeel exNm qZone
+    let peeledVariable = QVar "Forall" peeledExternalName peeledName
     let newDeps = [(y, peeledVariable) | y <- freeVars]
     newQZone <- addRels (addSetMember qZone peeledVariable) newDeps
     (qZone, newBox) <- updateHyp i (instantiate (Free peeledName) sc, peeledVariable:freeVars) qBox
@@ -145,13 +156,23 @@ modusPonens i j qBox@(qZone, Box hyps targs) = do
     (expr@(Forall exNm (Sc (Implies px qx))), freeVars) <- getHyp i hyps
     (py, freeVars'@(freeVar':rest')) <- getHyp j hyps
     let toInstantiate' = filter (`notElem` freeVars) freeVars' -- Finds the freeVars in p', but not expr
-    let singleMissing = (length toInstantiate' == 1)
-    guard singleMissing
-    guard $ (expr /= py) && (instantiate (Free . qVarGetInternalName . head $ toInstantiate') (Sc px) == py)
-    let newHyp = (instantiate (Free . qVarGetInternalName . head $ toInstantiate') (Sc qx), freeVars)
+    guard $ not (null toInstantiate')
+    guard $ (expr /= py)
+    let successes = filter (\var -> instantiate (Free . qVarGetInternalName $ var) (Sc px) == py) toInstantiate'
+    guard $ length successes == 1
+    let newHyp = (instantiate (Free . qVarGetInternalName . head $ successes) (Sc qx), freeVars)
     addHyp newHyp qBox
 
-
+-- Performs backwards reasoning on hypothesis i and target j
+-- hyp i  : P \implies Q
+-- targ j : Q
+-- replace targ j with P
+backwardsReasoningHyp :: Int -> Int -> BoxMove
+backwardsReasoningHyp i j qBox@(qZone, Box hyps targs) = do
+    (expr@(Implies p q), freeVars) <- getHyp i hyps
+    (q', freeVars) <- getTarg j targs
+    guard $ q == q'
+    updateTarg j (p, freeVars) qBox
 
 -- For now, a LibraryEquivalence is a QZone, a set of hypotheses (conditions under which the equivalence holds)
 -- And finally a pair of expressions which are equivalent in that context.
@@ -208,7 +229,7 @@ findConsistentSubs conds@((condIndex, h1):remainingConds) labelledHypExprs
         let possibleH1Subs = mapMaybe (\(i, e) -> case (i, matchExpressions h1 e) of
                 (n, Just sub) -> Just (n, sub)
                 (n, Nothing) -> Nothing) labelledHypExprs
-            
+
             -- Takes a substitution, and the hypothesis-index which has been matched
             -- along with the old conditions and old hypotheses, then generates a new set of
             -- conditions and hypotheses formed by removing 
@@ -221,7 +242,7 @@ findConsistentSubs conds@((condIndex, h1):remainingConds) labelledHypExprs
                     newLabelledHyps = map (\(n, exp) -> (n, applySubstitution sj exp)) newLabelledHypsPreSub
                     newConds = map (\(n, exp) -> (n, applySubstitution sj exp)) newCondsPreSub
                 in (newConds, newLabelledHyps)
-            
+
             -- These are the remaining problems to solve. We store them as pairs, the first part reprsenting the substitution done (given by a substitution and the hypothesis-index matched)
             -- The second part reprsenting the remaining problem after applying that substitution.
             remainingProblems = map (\s -> (s, generateNewProblem conds labelledHypExprs s)) possibleH1Subs
@@ -235,10 +256,10 @@ findConsistentSubs conds@((condIndex, h1):remainingConds) labelledHypExprs
                         Just sub -> Just (sub, (condIndex, i1):mapping)
                         _ -> Nothing) futureSolutions
                 in combinedFutureSolutions
-            
+
         -- The final result can be obtained from any of the remainingProblems we generated, thus we need to concatMap.
         in concatMap findFutureCombinedSolutions remainingProblems
-    
+
 
 -- <<< MOVE TESTING >>>
 
@@ -270,12 +291,13 @@ intersectionDefe = BApp (Pred "element_of") (Free (-1)) (BApp (Operator "set_int
 intersectionDefe' = And (BApp (Pred "element_of") (Free (-1)) (Free (-2))) (BApp (Pred "element_of") (Free (-1)) (Free (-3)))
 intersectionDef = LibraryEquivalence intersectionDefQZone [] (intersectionDefe, intersectionDefe')
 
+
 -- Intersection of open sets is open
 f1 = forall (Just $ ExternalName "X") (0) $
     forall (Just $ ExternalName "d") (1) $
     forall (Just $ ExternalName "U") (2) $
     forall (Just $ ExternalName "V") (3) $
-    Implies (TAnd 
+    Implies (TAnd
         (BApp (Pred "metric_on") (Free 1) (Free 0))
         (TApp (Pred "open_in_metric") (Free 2) (Free 1) (Free 0))
         (TApp (Pred "open_in_metric") (Free 3) (Free 1) (Free 0))) $
@@ -284,12 +306,14 @@ fQZone = Poset [] []
 fBox = Box [] [(f1, [])]
 fQBox = (fQZone, fBox)
 
-Just fResult = peelUniversalTarg 0 fQBox >>= peelUniversalTarg 0 >>= peelUniversalTarg 0 >>= peelUniversalTarg 0 >>= tidyImplInTarg 0 >>= tidyAndInHyp 0 >>= tidyAndInHyp 0
-Just fResult' = matchLibraryEquivalenceTarg openSetDefinition 0 fResult >>= matchLibraryEquivalenceHyp openSetDefinition 1 >>= matchLibraryEquivalenceHyp openSetDefinition 2
-Just fResult'' = peelUniversalTarg 0 fResult' >>= tidyImplInTarg 0 >>= peelExistentialTarg 0 >>= tidyAndInTarg 0 >>= peelUniversalTarg 1 >>= tidyImplInTarg 1 >>= tidyImplInTarg 1
-Just fResult''' = matchLibraryEquivalenceTarg intersectionDef 1 fResult'' >>= matchLibraryEquivalenceHyp intersectionDef 3 >>= tidyAndInHyp 3 >>= tidyAndInTarg 1
-Just fResult'''' = modusPonens 1 6 fResult''' >>= modusPonens 2 3 >>= peelExistentialHyp 7 >>= peelExistentialHyp 8
-
+Just fResult = 
+    peelUniversalTarg 0 fQBox >>= peelUniversalTarg 0 >>= peelUniversalTarg 0 >>= peelUniversalTarg 0 >>= tidyImplInTarg 0 >>= tidyAndInHyp 0 >>= tidyAndInHyp 0
+    >>= matchLibraryEquivalenceTarg openSetDefinition 0 >>= matchLibraryEquivalenceHyp openSetDefinition 1 >>= matchLibraryEquivalenceHyp openSetDefinition 2
+    >>= peelUniversalTarg 0 >>= tidyImplInTarg 0 >>= peelExistentialTarg 0 >>= tidyAndInTarg 0 >>= peelUniversalTarg 1 >>= tidyImplInTarg 1 >>= tidyImplInTarg 1
+    >>= matchLibraryEquivalenceTarg intersectionDef 1 >>= matchLibraryEquivalenceHyp intersectionDef 3 >>= tidyAndInHyp 3 >>= tidyAndInTarg 1
+    >>= modusPonens 1 6 >>= modusPonens 2 3 >>= peelExistentialHyp 7 >>= peelExistentialHyp 8 >>= tidyAndInHyp 7 >>= tidyAndInHyp 8
+    >>= modusPonens 9 4 >>= backwardsReasoningHyp 11 2
+    >>= modusPonens 10 4 >>= backwardsReasoningHyp 12 1
 
 at1 = exists (Just $ ExternalName "x") 0 (forall (Just $ ExternalName "y") 0 (exists (Just $ ExternalName "z") 1 (Eq (Free 0) (Free 1))))
 aBox = Box [] [(at1, [])]

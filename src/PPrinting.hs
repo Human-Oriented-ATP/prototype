@@ -119,6 +119,12 @@ pprintExpr :: Expr -> String
 pprintExpr e = evalState (pprintExprM e) (PS mempty mempty 0)
 
 
+showQZoneWithNamesNoDeps :: HashMap InternalName ExternalName -> QZone -> String
+showQZoneWithNamesNoDeps showMap qZone@(Poset set rel) = let
+  dealWithEmpty str = if str /= "" then str else "(empty)"
+  qListToStr = dealWithEmpty . intercalate ", " . map (\qVar -> (if qVarGetQuantifier qVar == "Forall" then "\8704" else "\8707") ++ getExternalName (showMap M.! qVarGetInternalName qVar))
+  qZoneStr = qListToStr $ orderQZone qZone
+  in "QZone: " ++ qZoneStr ++ "\n"
 
 showQZoneWithNames :: HashMap InternalName ExternalName -> QZone -> String
 showQZoneWithNames showMap qZone@(Poset set rel) = let
@@ -143,7 +149,7 @@ pprintQBox (qZone, Box hyps targs) = let
   PS showMap usedNames counter = getStartingPrintState qZone (PS mempty mempty 0)
   in
     "---- QZone ----\n" ++
-    showQZoneWithNames showMap qZone ++
+    showQZoneWithNamesNoDeps showMap qZone ++
     "---- Hyps ----\n" ++
     dealWithEmpty ( intercalate "\n" (zipWith (\a b -> a ++ ": " ++ b) (map show [0..]) $ map (pprintExprWithQZone qZone . fst) hyps) ) ++ "\n" ++
     "---- Targs ----\n" ++

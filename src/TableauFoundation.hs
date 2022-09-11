@@ -38,7 +38,7 @@ type Targ = (Expr, [QuantifiedVariable])
 
 -- | This stores hypothesis and targets. The only missing piece to form a full FOL statement is a TableauHead to contextualise the quantification.
 data Box = Box {getHyps :: [Hyp],
-                getTargs :: [Targ]} deriving (Show)
+                getTargs :: [Targ]} deriving (Eq, Show)
 
 -- | Other than closed expressions, this is the minimum natural object on which moves can act
 type QBox = (QZone, Box)
@@ -47,3 +47,4 @@ type QBox = (QZone, Box)
 -- At the moment, I'm thinking of different Box's as being more or less independent, but it seems useful to build in the capacity to have many.
 data Tableau = Tableau {getQZone :: QZone,
                         getBoxes :: [Box]}
+                        deriving (Eq)

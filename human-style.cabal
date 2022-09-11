@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: f87dd1ee87a24faf044ce9bfbce8725c67a3a60fc46ff2ef4933965d133b4768
+-- hash: e74c2169ef164e9d3c135cb3f606aafe8b2e87faf438f4d293603df448c1bcde
 
 name:           human-style
 version:        0.1.0.0
@@ -27,6 +27,7 @@ source-repository head
 
 library
   exposed-modules:
+      Automation
       Box
       Lib
       Library

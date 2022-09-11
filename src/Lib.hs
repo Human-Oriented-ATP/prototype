@@ -107,6 +107,9 @@ pattern QApp f a b c d = App (App (App (App (Con f) a) b) c) d
 pattern PApp :: ConstantString -> Expr -> Expr -> Expr -> Expr -> Expr -> Expr
 pattern PApp f a b c d e = App (App (App (App (App (Con f) a) b) c) d) e
 
+pattern HApp :: ConstantString -> Expr -> Expr -> Expr -> Expr -> Expr -> Expr -> Expr
+pattern HApp f a b c d e g = App (App (App (App (App (App (Con f) a) b) c) d) e) g
+
 pattern TAnd :: Expr -> Expr -> Expr -> Expr
 pattern TAnd x y z = And (And x y) z
 
@@ -115,6 +118,9 @@ pattern QAnd a b c d = And (And (And a b) c) d
 
 pattern PAnd :: Expr -> Expr -> Expr -> Expr -> Expr -> Expr
 pattern PAnd a b c d e = And (And (And (And a b) c) d) e
+
+pattern HAnd :: Expr -> Expr -> Expr -> Expr -> Expr -> Expr -> Expr
+pattern HAnd a b c d e f = And (And (And (And (And a b) c) d) e) f
 
 -- | The conjunction of two expressions.
 pattern And :: Expr -> Expr -> Expr

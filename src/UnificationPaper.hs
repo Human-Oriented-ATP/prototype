@@ -11,6 +11,8 @@ import PPrinting
 
 -- PROBABLY ALL QUITE INEFFICIENT, BUT WE CAN OPTIMISE LATER
 
+{-
+
 -- By default the permutation will be identity
 -- The left case is where we have a free variable, the right case is where we have a bound variable
 type Atom = Either InternalName Int
@@ -20,7 +22,7 @@ type SuspendedVariable = (Permutation, VariableName)
 
 -- | The type of expressions with the addition of variables in the sense of unification.
 data HExpr
-  = HApp HExpr HExpr
+  = VApp HExpr HExpr
     -- ^ A function application. Note that the function itself can be an expression.
   | HAbs (Maybe ExternalName) HScoped
     -- ^ An abstraction (eg \(x \mapsto x^2\)).
@@ -217,3 +219,4 @@ hForgetSuggestions (HB i)          = HB i
 hForgetSuggestions (V i)           = V i
 
 
+-}

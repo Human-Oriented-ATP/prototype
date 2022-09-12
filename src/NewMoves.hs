@@ -148,7 +148,6 @@ clearEmptyBoxes tab@(Tableau qZone boxes) =
 
 -- Peels universal target
 -- targ i : forall x, P(x)
--- IMPROVEMENT - update how dependencies work so that consecutively peeled forall's don't have forced order when they in fact commute
 peelUniversalTargBox :: Int -> BoxMove
 peelUniversalTargBox i qBox@(qZone, Box hyps targs) = do
     expr@(Forall exNm sc) <- getTarg i targs
@@ -157,7 +156,7 @@ peelUniversalTargBox i qBox@(qZone, Box hyps targs) = do
     let peeledName = getNewInternalName qZone
     let peeledExternalName = getNewExternalNamePeel exNm qZone
     let peeledVariable = QVar "Forall" peeledExternalName peeledName
-    let newDeps = [(y, peeledVariable) | y <- freeVars]
+    let newDeps = [(y, peeledVariable) | y <- freeVars, qVarGetQuantifier y == "Exists"] -- We only need to add dependencies relating to exists, because dependencies between forall's is given by this
     newQZone <- addRels (addSetMember qZone peeledVariable) newDeps
     (qZone, newBox) <- updateTarg i (instantiate (Free peeledName) sc) qBox
     return $ (newQZone, newBox)
@@ -172,7 +171,7 @@ peelExistentialTargBox i qBox@(qZone, Box hyps targs) = do
     let peeledName = getNewInternalName qZone
     let peeledExternalName = getNewExternalNamePeel exNm qZone
     let peeledVariable = QVar "Exists" peeledExternalName peeledName
-    let newDeps = [(y, peeledVariable) | y <- freeVars]
+    let newDeps = [(y, peeledVariable) | y <- freeVars, qVarGetQuantifier y == "Forall"]
     newQZone <- addRels (addSetMember qZone peeledVariable) newDeps
     (qZone, newBox) <- updateTarg i (instantiate (Free peeledName) sc) qBox
     return $ (newQZone, newBox)
@@ -188,7 +187,7 @@ peelExistentialHypBox i qBox@(qZone, Box hyps targs) = do
     let peeledName = getNewInternalName qZone
     let peeledExternalName = getNewExternalNamePeel exNm qZone
     let peeledVariable = QVar "Forall" peeledExternalName peeledName
-    let newDeps = [(y, peeledVariable) | y <- freeVars]
+    let newDeps = [(y, peeledVariable) | y <- freeVars, qVarGetQuantifier y == "Exists"]
     newQZone <- addRels (addSetMember qZone peeledVariable) newDeps
     (qZone, newBox) <- updateHyp i (instantiate (Free peeledName) sc) qBox
     return $ (newQZone, newBox)
@@ -204,7 +203,7 @@ peelUniversalHypBox i qBox@(qZone, Box hyps targs) = do
     let peeledName = getNewInternalName qZone
     let peeledExternalName = getNewExternalNamePeel exNm qZone
     let peeledVariable = QVar "Exists" peeledExternalName peeledName
-    let newDeps = [(y, peeledVariable) | y <- freeVars]
+    let newDeps = [(y, peeledVariable) | y <- freeVars, qVarGetQuantifier y == "Forall"]
     newQZone <- addRels (addSetMember qZone peeledVariable) newDeps
     (qZone, newBox) <- addHyp (instantiate (Free peeledName) sc) qBox
     return $ (newQZone, newBox)
@@ -214,8 +213,6 @@ peelUniversalHypBox i qBox@(qZone, Box hyps targs) = do
 
 -- Tidies implication in target
 -- targ i : P \implies Q
--- IMPROVEMENT (!!IMPORTANT!!) - actually need to create a new box when we do this technically, if there are multiple targets
--- IMPROVEMENT - could be stricter with tracking free variables here
 tidyImplInTarg :: Int -> Int -> TableauMove
 tidyImplInTarg i boxInd tab@(Tableau qZone boxes) = do
     qBox@(qZone, Box hyps targs) <- getBox boxInd tab
@@ -228,7 +225,6 @@ tidyImplInTarg i boxInd tab@(Tableau qZone boxes) = do
 
 -- Splits and hypotheses up
 -- hyp i : P ^ Q
--- IMPROVEMENT - could be stricter with tracking free variables here
 tidyAndInHypBox :: Int -> BoxMove
 tidyAndInHypBox i qBox@(qZone, Box hyps targ) = do
     And p q <- getHyp i hyps
@@ -461,10 +457,8 @@ repeatAsMuchAsPossibleTab tabMove tab = repeatUntilFP tabMove (Just $ Tableau (P
 
 -- <<< MOVE TESTING >>>
 
--- IMPROVEMENT - currently have extremely hacky solution using negative indices for library results
--- The idea is that negative indices represent "hole variables". If we don't do this, substitutions don't work properly
--- because, for instance substituting (Free 1 -> Free 2) then (Free 2 -> Free 3) makes (Free 1, Free 2) into (Free 3, Free 3) incorrectly
--- can solve this less hackily using another "Free" type, like the HExpr's in the UnificationPaper file
+-- IMPROVEMENT - have fixed the hacky need for negative InternalName's here using HoleExpr's, but this seemed to hit performance quite badly
+-- How can we improve this, and why does it affect performance?
 openSetDefQZone = Poset [QVar "Forall" (Just $ ExternalName "M") (-1)
     , QVar "Forall" (Just $ ExternalName "d") (-2)
     , QVar "Forall" (Just $ ExternalName "A") (-3)] []
@@ -589,15 +583,15 @@ gQBox = (gQZone, gBox)
 gTab = Tableau gQZone [gBox]
 
 Just gResult = tidyEverything gTab >>= boxToTabMove (matchLibraryEquivalenceTargBox continuousDef 0) 0 >>= tidyEverything
-    >>= boxToTabMove (peelExistentialTargBox 0) 0 >>= tidyEverything
-    >>= boxToTabMove (matchLibraryEquivalenceHypBox uniformLimDef 2) 1
-    >>= boxToTabMove (peelUniversalHypBox 2) 1 >>= commitToHypothesis 10 1 >>= tidyEverything
-    >>= boxToTabMove (peelUniversalHypBox 11) 1 >>= commitToHypothesis 12 1 >>= tidyEverything
-    >>= boxToTabMove (modusPonensBox 12 6) 1 >>= boxToTabMove (modusPonensBox 12 8) 1 >>= tidyEverything
-    >>= boxToTabMove (peelUniversalHypBox 1) 1 >>= commitToHypothesis 15 1
-    >>= boxToTabMove (matchLibraryEquivalenceHypBox continuousDef 15) 1 >>= tidyEverything
-    >>= boxToTabMove (modusPonensBox 15 6) 1 >>= boxToTabMove (modusPonensBox 16 7) 1 >>= tidyEverything
-    >>= boxToTabMove (modusPonensBox 18 8) 1
+     >>= boxToTabMove (peelExistentialTargBox 0) 0 >>= tidyEverything
+     >>= boxToTabMove (matchLibraryEquivalenceHypBox uniformLimDef 2) 1
+     >>= boxToTabMove (peelUniversalHypBox 2) 1 >>= commitToHypothesis 10 1 >>= tidyEverything
+     >>= boxToTabMove (peelUniversalHypBox 11) 1 >>= commitToHypothesis 12 1 >>= tidyEverything
+     >>= boxToTabMove (modusPonensBox 12 6) 1 >>= boxToTabMove (modusPonensBox 12 8) 1 >>= tidyEverything
+     >>= boxToTabMove (peelUniversalHypBox 1) 1 >>= commitToHypothesis 15 1
+     >>= boxToTabMove (matchLibraryEquivalenceHypBox continuousDef 15) 1 >>= tidyEverything
+     >>= boxToTabMove (modusPonensBox 15 6) 1 >>= boxToTabMove (modusPonensBox 16 7) 1 >>= tidyEverything
+     >>= boxToTabMove (modusPonensBox 18 8) 1
 
 gResult' = tidyEverything gTab
 

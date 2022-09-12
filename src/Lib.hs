@@ -186,26 +186,13 @@ forgetSuggestions (Free m)       = Free m
 forgetSuggestions (Con s)        = Con s
 forgetSuggestions (B i)          = B i
 
-type Agency t = InternalName -> t
 
-enterForall :: Agency (Expr -> Maybe (Maybe ExternalName, Expr))
-enterForall root e = instantiateForall e (Free root)
-
--- NOTE: For now, using integers as InternalNames, this will need a global context to work. Can fix this with the 'interaction monad' idea, or can switch to lists for InternalName's if preferable.
-{-
-swapForalls :: Agency (Expr -> Maybe Expr)
-swapForalls root e = do
-  (x0, first)  <- enterForall (("x", 0) : root) e
-  (x1, second) <- enterForall (("x", 1) : root) first
-  return $ forall x1 (("x", 1) : root) (forall x0 (("x", 0) : root) second)
--}
-
--- This could be wrong now that InternalName's are integers
-unsafeRunAgency :: Agency t -> t
-unsafeRunAgency x = x 0
-
-
--- Moved pretty printing stuff to the PPrinting Module
+getFreeVars :: Expr -> [InternalName]
+getFreeVars (App e e') = getFreeVars e `union` getFreeVars e'
+getFreeVars (Abs exNm (Sc sc)) = getFreeVars sc
+getFreeVars (Free n) = [n]
+getFreeVars (Con con) = []
+getFreeVars (B i) = []
 
 -- | Nothing right now.
 someFunc :: IO ()

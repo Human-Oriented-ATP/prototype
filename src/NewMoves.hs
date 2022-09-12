@@ -14,6 +14,7 @@ import Data.List
 import Control.Monad
 import PPrinting
 import Unification
+import Library
 import Debug.Trace
 
 -- <<< FOUNDATIONAL CODE >>>
@@ -150,26 +151,30 @@ clearEmptyBoxes tab@(Tableau qZone boxes) =
 -- IMPROVEMENT - update how dependencies work so that consecutively peeled forall's don't have forced order when they in fact commute
 peelUniversalTargBox :: Int -> BoxMove
 peelUniversalTargBox i qBox@(qZone, Box hyps targs) = do
-    (expr@(Forall exNm sc), freeVars) <- getTarg i targs
+    expr@(Forall exNm sc) <- getTarg i targs
+    let Poset set deps = qZone
+    let freeVars = map (\inNm -> head $ filter (\q -> qVarGetInternalName q == inNm) set) $ getFreeVars expr
     let peeledName = getNewInternalName qZone
     let peeledExternalName = getNewExternalNamePeel exNm qZone
     let peeledVariable = QVar "Forall" peeledExternalName peeledName
     let newDeps = [(y, peeledVariable) | y <- freeVars]
     newQZone <- addRels (addSetMember qZone peeledVariable) newDeps
-    (qZone, newBox) <- updateTarg i (instantiate (Free peeledName) sc, peeledVariable:freeVars) qBox
+    (qZone, newBox) <- updateTarg i (instantiate (Free peeledName) sc) qBox
     return $ (newQZone, newBox)
 
 -- Peels existential target, creating a metavariable
 -- targ i : exists x, P(x)
 peelExistentialTargBox :: Int -> BoxMove
 peelExistentialTargBox i qBox@(qZone, Box hyps targs) = do
-    (expr@(Exists exNm sc), freeVars) <- getTarg i targs
+    expr@(Exists exNm sc) <- getTarg i targs
+    let Poset set deps = qZone
+    let freeVars = map (\inNm -> head $ filter (\q -> qVarGetInternalName q == inNm) set) $ getFreeVars expr
     let peeledName = getNewInternalName qZone
     let peeledExternalName = getNewExternalNamePeel exNm qZone
     let peeledVariable = QVar "Exists" peeledExternalName peeledName
     let newDeps = [(y, peeledVariable) | y <- freeVars]
     newQZone <- addRels (addSetMember qZone peeledVariable) newDeps
-    (qZone, newBox) <- updateTarg i (instantiate (Free peeledName) sc, peeledVariable:freeVars) qBox
+    (qZone, newBox) <- updateTarg i (instantiate (Free peeledName) sc) qBox
     return $ (newQZone, newBox)
 
 -- Peels existential hypothesis
@@ -177,13 +182,15 @@ peelExistentialTargBox i qBox@(qZone, Box hyps targs) = do
 -- IMPROVEMENT - currently find new external name to prevent confusing outputs after a single move, but maybe this should happen at the print stage? Think about this.
 peelExistentialHypBox :: Int -> BoxMove
 peelExistentialHypBox i qBox@(qZone, Box hyps targs) = do
-    (expr@(Exists exNm sc), freeVars) <- getHyp i hyps
+    expr@(Exists exNm sc) <- getHyp i hyps
+    let Poset set deps = qZone
+    let freeVars = map (\inNm -> head $ filter (\q -> qVarGetInternalName q == inNm) set) $ getFreeVars expr
     let peeledName = getNewInternalName qZone
     let peeledExternalName = getNewExternalNamePeel exNm qZone
     let peeledVariable = QVar "Forall" peeledExternalName peeledName
     let newDeps = [(y, peeledVariable) | y <- freeVars]
     newQZone <- addRels (addSetMember qZone peeledVariable) newDeps
-    (qZone, newBox) <- updateHyp i (instantiate (Free peeledName) sc, peeledVariable:freeVars) qBox
+    (qZone, newBox) <- updateHyp i (instantiate (Free peeledName) sc) qBox
     return $ (newQZone, newBox)
 
 -- Peels universal hypothesis, creating a metavariable
@@ -191,13 +198,15 @@ peelExistentialHypBox i qBox@(qZone, Box hyps targs) = do
 -- hyp i : forall x, P(x)
 peelUniversalHypBox :: Int -> BoxMove
 peelUniversalHypBox i qBox@(qZone, Box hyps targs) = do
-    (expr@(Forall exNm sc), freeVars) <- getHyp i hyps
+    expr@(Forall exNm sc) <- getHyp i hyps
+    let Poset set deps = qZone
+    let freeVars = map (\inNm -> head $ filter (\q -> qVarGetInternalName q == inNm) set) $ getFreeVars expr
     let peeledName = getNewInternalName qZone
     let peeledExternalName = getNewExternalNamePeel exNm qZone
     let peeledVariable = QVar "Exists" peeledExternalName peeledName
     let newDeps = [(y, peeledVariable) | y <- freeVars]
     newQZone <- addRels (addSetMember qZone peeledVariable) newDeps
-    (qZone, newBox) <- addHyp (instantiate (Free peeledName) sc, peeledVariable:freeVars) qBox
+    (qZone, newBox) <- addHyp (instantiate (Free peeledName) sc) qBox
     return $ (newQZone, newBox)
 
 
@@ -210,9 +219,9 @@ peelUniversalHypBox i qBox@(qZone, Box hyps targs) = do
 tidyImplInTarg :: Int -> Int -> TableauMove
 tidyImplInTarg i boxInd tab@(Tableau qZone boxes) = do
     qBox@(qZone, Box hyps targs) <- getBox boxInd tab
-    (Implies p q, freeVars) <- getTarg i targs
-    let newHyps = hyps ++ [(p, freeVars)]
-    let newTargs = [(q, freeVars)]
+    Implies p q <- getTarg i targs
+    let newHyps = hyps ++ [p]
+    let newTargs = [q]
     let newBox = Box newHyps newTargs
     (_, remainingBox) <- removeTarg i qBox
     updateBox boxInd remainingBox tab >>= addBox newBox >>= clearEmptyBoxes
@@ -222,13 +231,13 @@ tidyImplInTarg i boxInd tab@(Tableau qZone boxes) = do
 -- IMPROVEMENT - could be stricter with tracking free variables here
 tidyAndInHypBox :: Int -> BoxMove
 tidyAndInHypBox i qBox@(qZone, Box hyps targ) = do
-    (And p q, freeVars) <- getHyp i hyps
-    updateHyp i (p, freeVars) qBox >>= addHyp (q, freeVars)
+    And p q <- getHyp i hyps
+    updateHyp i p qBox >>= addHyp q
 
 tidyAndInTargBox :: Int -> BoxMove
 tidyAndInTargBox i qBox@(qZone, Box hyps targs) = do
-    (And p q, freeVars) <- getTarg i targs
-    updateTarg i (p, freeVars) qBox >>= addTarg (q, freeVars)
+    And p q <- getTarg i targs
+    updateTarg i p qBox >>= addTarg q
 
 
 -- MODUS PONENS AND BACKWARDS REASONING
@@ -239,14 +248,16 @@ tidyAndInTargBox i qBox@(qZone, Box hyps targs) = do
 -- conclude : Q(y)
 modusPonensBox :: Int -> Int -> BoxMove
 modusPonensBox i j qBox@(qZone, Box hyps targs) = do
-    (expr@(Forall exNm (Sc (Implies px qx))), freeVars) <- getHyp i hyps
-    (py, freeVars'@(freeVar':rest')) <- getHyp j hyps
+    expr@(Forall exNm (Sc (Implies px qx))) <- getHyp i hyps
+    let freeVars = getFreeVars expr
+    py <- getHyp j hyps
+    let freeVars'@(freeVar':rest') = getFreeVars py
     let toInstantiate' = filter (`notElem` freeVars) freeVars' -- Finds the freeVars in p', but not expr
     guard $ not (null toInstantiate')
     guard $ (expr /= py)
-    let successes = filter (\var -> instantiate (Free . qVarGetInternalName $ var) (Sc px) == py) toInstantiate'
+    let successes = filter (\var -> instantiate (Free var) (Sc px) == py) toInstantiate'
     guard $ length successes == 1
-    let newHyp = (instantiate (Free . qVarGetInternalName . head $ successes) (Sc qx), freeVars)
+    let newHyp = instantiate (Free . head $ successes) (Sc qx)
     addHyp newHyp qBox
 
 -- Performs backwards reasoning on hypothesis i and target j
@@ -255,10 +266,10 @@ modusPonensBox i j qBox@(qZone, Box hyps targs) = do
 -- replace targ j with P
 backwardsReasoningHypBox :: Int -> Int -> BoxMove
 backwardsReasoningHypBox i j qBox@(qZone, Box hyps targs) = do
-    (expr@(Implies p q), freeVars) <- getHyp i hyps
-    (q', freeVars) <- getTarg j targs
+    expr@(Implies p q) <- getHyp i hyps
+    q' <- getTarg j targs
     guard $ q == q'
-    updateTarg j (p, freeVars) qBox
+    updateTarg j p qBox
 
 
 -- <<< OTHER >>>
@@ -269,10 +280,10 @@ backwardsReasoningHypBox i j qBox@(qZone, Box hyps targs) = do
 commitToHypothesis :: Int -> Int -> TableauMove
 commitToHypothesis i boxInd tab@(Tableau qZone boxes) = do
     qBox@(_, Box hyps targs) <- getBox boxInd tab
-    (expr@(Implies p q), freeVars) <- getHyp i hyps
+    expr@(Implies p q) <- getHyp i hyps
     (qZone, Box deducePHyps _) <- removeHyp i qBox
-    let deducePBox = (Box deducePHyps [(p, freeVars)])
-    (_, useQBox) <- updateHyp i (q, freeVars) qBox
+    let deducePBox = (Box deducePHyps [p])
+    (_, useQBox) <- updateHyp i q qBox
     newTab <- updateBox boxInd useQBox tab
     addBox deducePBox newTab
 
@@ -282,11 +293,18 @@ commitToHypothesis i boxInd tab@(Tableau qZone boxes) = do
 -- And finally a pair of expressions which are equivalent in that context.
 -- IMPROVEMENT - at the moment, these equivalences actually only go one way, and can only be an equivalence between two terms.
 -- Not hard to make it go the other way, too, but think about how exactly (and at what level) we want this to happen.
-data LibraryEquivalence = LibraryEquivalence QZone [Expr] (Expr, Expr)
+data LibraryEquivalence = LibraryEquivalence QZone [HoleExpr] [HoleExpr]
 
 -- For now, a LibraryEquivalence is basically a Tableau (though we won't store the FreeVar info. Maybe we shouldn't be storing this in general, and simply computing it when we need it)
 -- IMPROVEMENT - think about whether we need to store FreeVar information all the time in Hyps/Targs
-data LibraryImplication = LibraryImplication QZone [Expr] [Expr]
+data LibraryImplication = LibraryImplication QZone [HoleExpr] [HoleExpr]
+
+
+libEquivTargWithCondMap :: LibraryEquivalence -> [(Int, Int)] -> Int -> QBox -> Maybe QBox
+libEquivTargWithCondMap (LibraryEquivalence libQZone conditions equivalents) condMap targInd qBox@(qZone, Box hyps targs) =
+    Nothing
+
+
 
 -- Takes a library equivalence and a QBox and applies the library equivalence to the i-th target
 -- IMPROVEMENT - I need to think more about what the rules regarding the state of the QZone is
@@ -295,47 +313,41 @@ data LibraryImplication = LibraryImplication QZone [Expr] [Expr]
 -- can re-use this code at the higher level of finding substitutions, though!
 -- IMPROVEMENT - the way this is currently implemented, this actually does forward reasoning implications too
 matchLibraryEquivalenceTargBox :: LibraryEquivalence  -> Int -> QBox -> Maybe QBox
-matchLibraryEquivalenceTargBox (LibraryEquivalence libQZone conds (e, e')) i qBox@(qZone, Box hyps targs) = do
-    (targExpr, freeVars) <- getTarg i targs
+matchLibraryEquivalenceTargBox (LibraryEquivalence libQZone conditions equivalents) i qBox@(qZone, Box hyps targs) = do
+    let [e, e'] = equivalents
+    targExpr <- getTarg i targs
     initialSub <- matchExpressions e targExpr -- Match the suggested equivalence with the suggested target
     -- Now we need to ensure all conditions in the result can match to a hypothesis consistently
-    let condSubs = map fst $ findConsistentSubs (zip [0..] conds) (zip [0..] $ map fst hyps)
+    let condSubs = map fst $ findConsistentSubs (zip [0..] conditions) (zip [0..] hyps)
 
     -- IMPROVEMENT - Currently gives multiple, but actually isn't the substitution forced by the target? Not sure, for now will just take the head if it exists
     let possibleSubs = mapMaybe (mergeSubstitutions initialSub) condSubs
     if null possibleSubs then Nothing
-    else let
-        sub = head possibleSubs
-        newFreeVars = freeVars -- IMPROVEMENT - should really do this by mapping substitutions over the free variables in the library statement, but need a few things which are missing
-        -- One option would be to have library statements also contain the FreeVariable info, another would be to write a function to get a list of FreeVariables from a statement (not at all hard)
-        -- The bigger issue is that we need [QuantifiedVariable], and so we need to use the QZone context to get the quantification info
-        -- Still need to figure out how the QZone works with all of this.
-        newTarg = (applySubstitution sub e', newFreeVars)
-        in updateTarg i newTarg qBox
+    else do
+        let (sub:_) = possibleSubs
+        newTarg <- holeExprToExpr $ applySubstitution sub e'
+        updateTarg i newTarg qBox
 
 -- IMPROVEMENT - should we prevent the hypothesis which will be matched from being one of the conditions?
 matchLibraryEquivalenceHypBox :: LibraryEquivalence -> Int -> QBox -> Maybe QBox
-matchLibraryEquivalenceHypBox (LibraryEquivalence libQZone conds (e, e')) i qBox@(qZone, Box hyps targs) = do
-    (hypExpr, freeVars) <- getHyp i hyps
+matchLibraryEquivalenceHypBox (LibraryEquivalence libQZone conditions equivalents) i qBox@(qZone, Box hyps targs) = do
+    let [e, e'] = equivalents
+    hypExpr <- getHyp i hyps
     initialSub <- matchExpressions e hypExpr -- Match the suggested equivalence with the suggested target
     -- Now we need to ensure all conditions in the result can match to a hypothesis consistently
-    let condSubs = map fst $ findConsistentSubs (zip [0..] conds) (zip [0..] $ map fst hyps)
+    let condSubs = map fst $ findConsistentSubs (zip [0..] conditions) (zip [0..] hyps)
 
     -- IMPROVEMENT - Currently gives multiple, but actually isn't the substitution forced by the target? Not sure, for now will just take the head if it exists
     let possibleSubs = mapMaybe (mergeSubstitutions initialSub) condSubs
     if null possibleSubs then Nothing
-    else let
-        sub = head possibleSubs
-        newFreeVars = freeVars -- IMPROVEMENT - should really do this by mapping substitutions over the free variables in the library statement, but need a few things which are missing
-        -- One option would be to have library statements also contain the FreeVariable info, another would be to write a function to get a list of FreeVariables from a statement (not at all hard)
-        -- The bigger issue is that we need [QuantifiedVariable], and so we need to use the QZone context to get the quantification info
-        -- Still need to figure out how the QZone works with all of this.
-        newHyp = (applySubstitution sub e', newFreeVars)
-        in updateHyp i newHyp qBox
+    else do
+        let (sub:_) = possibleSubs
+        newHyp <- holeExprToExpr $ applySubstitution sub e'
+        updateHyp i newHyp qBox
 
 
 -- Finds consistent substitutions (if any exists). We also specify the way hypotheses were matched to one another
-findConsistentSubs :: [(Int, Expr)] -> [(Int, Expr)] -> [(Substitution, [(Int, Int)])]
+findConsistentSubs :: [(Int, HoleExpr)] -> [(Int, Expr)] -> [(Substitution, [(Int, Int)])]
 findConsistentSubs [] _ = [([], [])]
 findConsistentSubs conds@((condIndex, h1):remainingConds) labelledHypExprs
     | length conds > length labelledHypExprs = []
@@ -346,14 +358,13 @@ findConsistentSubs conds@((condIndex, h1):remainingConds) labelledHypExprs
 
             -- Takes a substitution, and the hypothesis-index which has been matched
             -- along with the old conditions and old hypotheses, then generates a new set of
-            -- conditions and hypotheses formed by removing 
-            generateNewProblem :: [(Int, Expr)] -> [(Int, Expr)] -> (Int, Substitution) -> ([(Int, Expr)], [(Int, Expr)])
+            -- conditions and hypotheses formed by removing the hypothesis/condition and substiuting as appropriate
+            generateNewProblem :: [(Int, HoleExpr)] -> [(Int, Expr)] -> (Int, Substitution) -> ([(Int, HoleExpr)], [(Int, Expr)])
             generateNewProblem [] _ _ = ([], []) -- This pattern should never be matched because the empty condition case is dealt with
             -- There should never be more conditions than hypotheses because this is guarded out initially
             generateNewProblem (_:newCondsPreSub) oldLabelledHyps (ij, sj) =
                 -- Do all the substitutions and get rid of first condition and relevant, ij-th, hyp
-                let newLabelledHypsPreSub = filter (\(n, exp) -> n /= ij) oldLabelledHyps
-                    newLabelledHyps = map (\(n, exp) -> (n, applySubstitution sj exp)) newLabelledHypsPreSub
+                let newLabelledHyps = filter (\(n, exp) -> n /= ij) oldLabelledHyps
                     newConds = map (\(n, exp) -> (n, applySubstitution sj exp)) newCondsPreSub
                 in (newConds, newLabelledHyps)
 
@@ -362,7 +373,7 @@ findConsistentSubs conds@((condIndex, h1):remainingConds) labelledHypExprs
             remainingProblems = map (\s -> (s, generateNewProblem conds labelledHypExprs s)) possibleH1Subs
 
             -- This takes a remaining problem, recursively finds the solution, and combines it with the initial substitution to give us the final result
-            findFutureCombinedSolutions :: ((Int, Substitution), ([(Int, Expr)], [(Int, Expr)])) -> [(Substitution, [(Int, Int)])]
+            findFutureCombinedSolutions :: ((Int, Substitution), ([(Int, HoleExpr)], [(Int, Expr)])) -> [(Substitution, [(Int, Int)])]
             findFutureCombinedSolutions newProblem =
                 let ((i1, s1), (newConds, newLabelledHyps)) = newProblem
                     futureSolutions = findConsistentSubs newConds newLabelledHyps
@@ -457,9 +468,9 @@ repeatAsMuchAsPossibleTab tabMove tab = repeatUntilFP tabMove (Just $ Tableau (P
 openSetDefQZone = Poset [QVar "Forall" (Just $ ExternalName "M") (-1)
     , QVar "Forall" (Just $ ExternalName "d") (-2)
     , QVar "Forall" (Just $ ExternalName "A") (-3)] []
-openSetDefH1 = BApp (Pred "metric_on") (Free (-2)) (Free (-1))
-openSetDefe = TApp (Pred "open_in_metric") (Free (-3)) (Free (-2)) (Free (-1))
-openSetDefe' = forall (Just $ ExternalName "x") (0) $
+openSetDefH1 = holeFreeVars $ BApp (Pred "metric_on") (Free (-2)) (Free (-1))
+openSetDefe = holeFreeVars $ TApp (Pred "open_in_metric") (Free (-3)) (Free (-2)) (Free (-1))
+openSetDefe' = holeFreeVars $ forall (Just $ ExternalName "x") (0) $
     Implies (BApp (Pred "element_of") (Free (0)) (Free (-3))) $
     exists (Just $ ExternalName "delta") (1) $
     And (BApp (Pred "real_greater_than") (Free (1)) (Con $ Obj "0")) $
@@ -467,15 +478,14 @@ openSetDefe' = forall (Just $ ExternalName "x") (0) $
     Implies (BApp (Pred "element_of") (Free (2)) (Free (-1))) $
     Implies (BApp (Pred "real_lesser_than") (App (App (Free (-2)) (Free (0))) (Free (2))) (Free (1))) $
     BApp (Pred "element_of") (Free (2)) (Free (-3))
-openSetDefinition = LibraryEquivalence openSetDefQZone [openSetDefH1] (openSetDefe, openSetDefe')
-openSetDefinitionQBox = (openSetDefQZone, Box [(openSetDefH1, [])] [(openSetDefe, []), (openSetDefe', [])])
+openSetDefinition = LibraryEquivalence openSetDefQZone [openSetDefH1] [openSetDefe, openSetDefe']
 
 intersectionDefQZone = Poset [ QVar "forall" (Just $ ExternalName "x") (-1)
     , QVar "forall" (Just $ ExternalName "A") (-2)
     , QVar "forall" (Just $ ExternalName "B") (-3)] []
-intersectionDefe = BApp (Pred "element_of") (Free (-1)) (BApp (Operator "set_intersection") (Free (-2)) (Free (-3)))
-intersectionDefe' = And (BApp (Pred "element_of") (Free (-1)) (Free (-2))) (BApp (Pred "element_of") (Free (-1)) (Free (-3)))
-intersectionDef = LibraryEquivalence intersectionDefQZone [] (intersectionDefe, intersectionDefe')
+intersectionDefe = holeFreeVars $ BApp (Pred "element_of") (Free (-1)) (BApp (Operator "set_intersection") (Free (-2)) (Free (-3)))
+intersectionDefe' = holeFreeVars $ And (BApp (Pred "element_of") (Free (-1)) (Free (-2))) (BApp (Pred "element_of") (Free (-1)) (Free (-3)))
+intersectionDef = LibraryEquivalence intersectionDefQZone [] [intersectionDefe, intersectionDefe']
 
 -- IMPROVEMENT - for now we're storing this as an equivalence because the above code would be identical for an implication, but
 -- need to clarify how we want either to work and implement separately.
@@ -486,10 +496,10 @@ intersectionDef = LibraryEquivalence intersectionDefQZone [] (intersectionDefe, 
 lesserThanTransQZone = Poset [QVar "Forall" (Just $ ExternalName "a") (-1)
     , QVar "Forall" (Just $ ExternalName "b") (-2)
     , QVar "Forall" (Just $ ExternalName "c") (-3)] []
-lesserThanTransH1 = BApp (Pred "real_lesser_than") (Free (-1)) (Free (-2))
-lesserThanTranse = BApp (Pred "real_lesser_than") (Free (-1)) (Free (-3))
-lesserThanTranse' = BApp (Pred "real_leq") (Free (-2)) (Free (-3))
-lesserThanTrans = LibraryEquivalence lesserThanTransQZone [lesserThanTransH1] (lesserThanTranse, lesserThanTranse')
+lesserThanTransH1 = holeFreeVars $ BApp (Pred "real_lesser_than") (Free (-1)) (Free (-2))
+lesserThanTranse = holeFreeVars $ BApp (Pred "real_lesser_than") (Free (-1)) (Free (-3))
+lesserThanTranse' = holeFreeVars $  BApp (Pred "real_leq") (Free (-2)) (Free (-3))
+lesserThanTrans = LibraryEquivalence lesserThanTransQZone [lesserThanTransH1] [lesserThanTranse, lesserThanTranse']
 
 -- Intersection of open sets is open
 f1 = forall (Just $ ExternalName "X") (0) $
@@ -502,7 +512,7 @@ f1 = forall (Just $ ExternalName "X") (0) $
         (TApp (Pred "open_in_metric") (Free 3) (Free 1) (Free 0))) $
     TApp (Pred "open_in_metric") (BApp (Operator "set_intersection") (Free 2) (Free 3)) (Free 1) (Free 0)
 fQZone = Poset [] []
-fBox = Box [] [(f1, [])]
+fBox = Box [] [f1]
 fQBox = (fQZone, fBox)
 fTab = Tableau fQZone [fBox]
 
@@ -531,15 +541,15 @@ continuousDefQZone = Poset [QVar "Forall" (Just $ ExternalName "f") (-1)
     , QVar "Forall" (Just $ ExternalName "Y") (-5)] []
 
 
-continuousDefe = PApp (Pred "continuous_in_metric_space") (Free (-1)) (Free (-2)) (Free (-3)) (Free (-4)) (Free (-5))
-continuousDefe' =
+continuousDefe = holeFreeVars $ PApp (Pred "continuous_in_metric_space") (Free (-1)) (Free (-2)) (Free (-3)) (Free (-4)) (Free (-5))
+continuousDefe' = holeFreeVars $
     forall (Just $ ExternalName "x") 0 $ Implies (BApp (Pred "element_of") (Free 0) (Free (-3))) $
     forall (Just $ ExternalName "epsilon") 1 $ Implies (BApp (Pred "real_greater_than") (Free 1) (Con $ Obj "zero")) $
     exists (Just $ ExternalName "delta") 2 $ And (BApp (Pred "real_greater_than") (Free 2) (Con $ Obj "0")) $
     forall (Just $ ExternalName "y") 3 $ Implies (BApp (Pred "element_of") (Free 3) (Free (-3))) $
     Implies (BApp (Pred "real_lesser_than") (App (App (Free (-2)) (Free 0)) (Free 3)) (Free 2)) $
     (BApp (Pred "real_lesser_than") (App (App (Free (-4)) (App (Free (-1)) (Free 0))) (App (Free (-1)) (Free 3))) (Free 1))
-continuousDef = LibraryEquivalence continuousDefQZone [] (continuousDefe, continuousDefe')
+continuousDef = LibraryEquivalence continuousDefQZone [] [continuousDefe, continuousDefe']
 
 
 -- IMPROVEMENT - think about exactly how much information we include. For example, do we really need things like "metric_on" as conditions, given that this is implicit from the uniform_limit_of_functions_metric_space? I don't know.
@@ -549,13 +559,13 @@ uniformLimDefQZone = Poset [QVar "Forall" (Just $ ExternalName "f_") (-1)
     , QVar "Forall" (Just $ ExternalName "X") (-3)
     , QVar "Forall" (Just $ ExternalName "d_Y") (-4)
     , QVar "Forall" (Just $ ExternalName "Y") (-5)] []
-uniformLimDefe = PApp (Pred "uniform_limit_of_functions_metric_space") (Free (-1)) (Free (-2)) (Free (-3)) (Free (-4)) (Free (-5))
-uniformLimDefe' = forall (Just $ ExternalName "theta") (0) $ Implies (BApp (Pred "real_greater_than") (Free 0) (Con $ Obj "0")) $
+uniformLimDefe = holeFreeVars $ PApp (Pred "uniform_limit_of_functions_metric_space") (Free (-1)) (Free (-2)) (Free (-3)) (Free (-4)) (Free (-5))
+uniformLimDefe' = holeFreeVars $ forall (Just $ ExternalName "theta") (0) $ Implies (BApp (Pred "real_greater_than") (Free 0) (Con $ Obj "0")) $
     exists (Just $ ExternalName "N") (1) $ And (UApp (Pred "is_natural") (Free 1)) $
     forall (Just $ ExternalName "n") (2) $ Implies (And (UApp (Pred "is_natural") (Free 2)) (BApp (Pred "real_greater_than") (Free 2) (Free 1))) $
     forall (Just $ ExternalName "x") (3) $ Implies (BApp (Pred "element_of") (Free 3) (Free (-3))) $
     BApp (Pred "real_lesser_than") (App (App (Free (-4)) (App (App (Free (-1)) (Free 2)) (Free 3))) (App (Free (-2)) (Free 3))) (Free 0)
-uniformLimDef = LibraryEquivalence uniformLimDefQZone [] (uniformLimDefe, uniformLimDefe')
+uniformLimDef = LibraryEquivalence uniformLimDefQZone [] [uniformLimDefe, uniformLimDefe']
 
 -- Uniform limit of cts functions is cts
 g1 = forall (Just $ ExternalName "X") (0) $
@@ -574,7 +584,7 @@ g1 = forall (Just $ ExternalName "X") (0) $
     PApp (Pred "continuous_in_metric_space") (Free 4) (Free 2) (Free 0) (Free 3) (Free 1)
 
 gQZone = Poset [] []
-gBox = Box [] [(g1, [])]
+gBox = Box [] [g1]
 gQBox = (gQZone, gBox)
 gTab = Tableau gQZone [gBox]
 
@@ -589,8 +599,10 @@ Just gResult = tidyEverything gTab >>= boxToTabMove (matchLibraryEquivalenceTarg
     >>= boxToTabMove (modusPonensBox 15 6) 1 >>= boxToTabMove (modusPonensBox 16 7) 1 >>= tidyEverything
     >>= boxToTabMove (modusPonensBox 18 8) 1
 
+gResult' = tidyEverything gTab
+
 at1 = exists (Just $ ExternalName "x") 0 (forall (Just $ ExternalName "y") 0 (exists (Just $ ExternalName "z") 1 (Eq (Free 0) (Free 1))))
-aBox = Box [] [(at1, [])]
+aBox = Box [] [at1]
 aHead = Poset [] []
 aQBox = (aHead, aBox)
 Just aResult = (peelExistentialTargBox 0) aQBox >>= (peelUniversalTargBox 0) >>= (peelExistentialTargBox 0)
@@ -604,7 +616,7 @@ bh1 = forall (Just $ ExternalName "x") 0 $
 bh2= Eq (UApp (Operator "succ") (Free 1)) (Con (Obj "1"))
 
 bTestHead = Poset [QVar "Forall" (Just $ ExternalName "y") 1] []
-bTestBox = Box [(bh1, []), (bh2, [QVar "Forall" (Just $ ExternalName "y") 1])] []
+bTestBox = Box [bh1, bh2] []
 bTestQBox = (bTestHead, bTestBox)
 Just bResult = modusPonensBox 0 1 bTestQBox
 bBeforeStr = pprintQBox bTestQBox
@@ -614,7 +626,7 @@ bStr = pprintQBox bResult
 -- Implication in target tidy
 ct1 = Implies (Eq (UApp (Operator "succ") (Free 0)) (UApp (Operator "succ") (Free 1))) (Eq (Free 0) (Free 1))
 cTestHead = Poset [QVar "Forall" (Just $ ExternalName "x") 0, QVar "Forall" (Just $ ExternalName "y") 1] []
-cTestBox = Box [] [(ct1, [QVar "Forall" (Just $ ExternalName "x") 0, QVar "Forall" (Just $ ExternalName "y") 1])]
+cTestBox = Box [] [ct1]
 cTestQBox = (cTestHead, cTestBox)
 cTestTab = Tableau cTestHead [cTestBox]
 Just cResult = tidyImplInTarg 0 0 cTestTab

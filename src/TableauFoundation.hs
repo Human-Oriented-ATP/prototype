@@ -2,7 +2,8 @@ module TableauFoundation where
 
 import Poset
 import Lib
-
+import Data.HashMap.Strict (HashMap)
+import qualified Data.HashMap.Strict as M
 import Data.List
 
 -- <<<< TYPES DEFINING WHAT A TABLEAU IS >>>>
@@ -33,8 +34,8 @@ instance Show Tableau where
 -- | Type synonyms to make type declarations clearer. The expression part of the pair is by far the most important.
 -- The only reason we need a list of QuantifiedVariables is to keep track of which free variables (InternalName's) appear in the expression
 -- This could be deduced from the expression, but it'll be more computationally expensive
-type Hyp = (Expr, [QuantifiedVariable])
-type Targ = (Expr, [QuantifiedVariable])
+type Hyp = Expr
+type Targ = Expr
 
 -- | This stores hypothesis and targets. The only missing piece to form a full FOL statement is a TableauHead to contextualise the quantification.
 data Box = Box {getHyps :: [Hyp],

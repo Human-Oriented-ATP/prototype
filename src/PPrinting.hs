@@ -151,9 +151,9 @@ pprintQBox (qZone, Box hyps targs) = let
     "---- QZone ----\n" ++
     showQZoneWithNamesNoDeps showMap qZone ++
     "---- Hyps ----\n" ++
-    dealWithEmpty ( intercalate "\n" (zipWith (\a b -> a ++ ": " ++ b) (map show [0..]) $ map (pprintExprWithQZone qZone . fst) hyps) ) ++ "\n" ++
+    dealWithEmpty ( intercalate "\n" (zipWith (\a b -> a ++ ": " ++ b) (map show [0..]) $ map (pprintExprWithQZone qZone) hyps) ) ++ "\n" ++
     "---- Targs ----\n" ++
-    dealWithEmpty ( intercalate "\n" (zipWith (\a b -> a ++ ": " ++ b) (map show [0..]) $ map (pprintExprWithQZone qZone . fst) targs) )
+    dealWithEmpty ( intercalate "\n" (zipWith (\a b -> a ++ ": " ++ b) (map show [0..]) $ map (pprintExprWithQZone qZone) targs) )
 
 
 rawPrintQBox :: QBox -> String

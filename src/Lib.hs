@@ -19,7 +19,7 @@ import Data.List
 
 -- | A type to represent external variable names.
 newtype ExternalName = ExternalName { getExternalName :: String }
-  deriving (Eq, Ord, Show, Hashable)
+  deriving (Eq, Ord, Show, Hashable, Read)
 
 type InternalName = Int
 
@@ -29,7 +29,7 @@ instance IsString ExternalName where
 
 -- Type of constant, for determining if something is a term or not
 data ConstantString = Operator String | Pred String | Quant String | Log String | Obj String
-  deriving (Eq, Show)
+  deriving (Eq, Show, Read)
 
 strFromConStr :: ConstantString -> String
 strFromConStr (Operator s) = s
@@ -50,10 +50,10 @@ data Expr
     -- ^ A constant (eg the naturals, or the sin function).
   | B Int
     -- ^ A bound variable
-  deriving (Eq, Show) 
+  deriving (Eq, Show, Read) 
 
 newtype Scoped = Sc Expr
-  deriving (Eq, Show)
+  deriving (Eq, Show, Read)
 
 -- | Check for equality of expressions up to alpha-equivalence.
 class AlphaEq t where

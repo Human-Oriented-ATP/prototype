@@ -13,7 +13,7 @@ import Control.Applicative.Combinators (count)
 
 -- | Poset type to store information about quantification order. Probably very inefficient for now, but this can be optimised I'm sure
 -- In the relations list, a tuple (x_1, x_2) indicates that x_1 < x_2, i.e. x_1 must come before x_2
-data Poset a = Poset {getSet :: [a], getRelations :: [(a, a)]} deriving Eq
+data Poset a = Poset {getSet :: [a], getRelations :: [(a, a)]} deriving (Eq, Show, Read)
 
 -- | Adds member to set, leaving relation untouched
 addSetMember :: (Eq a) => Poset a -> a -> Poset a

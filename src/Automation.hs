@@ -13,7 +13,7 @@ import Data.Maybe
 import Data.List
 import Control.Monad
 import PPrinting
-import Unification
 import Debug.Trace
-import NewMoves
+import BasicMoves
+import LibraryMoves
 

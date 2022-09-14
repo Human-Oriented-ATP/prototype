@@ -114,6 +114,7 @@ parseFree = try $ do
 -- | Parse a constant
 parseCon :: Parser Expr
 parseCon = try (Con . Operator <$> some letterChar)
+  -- always parses things as operators for now
   -- this try might be unnecessary but if the syntax changes it could become
   -- crucial
 

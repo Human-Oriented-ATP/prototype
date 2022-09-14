@@ -1,9 +1,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternSynonyms #-}
 
-module Library where
+module HoleExpr where
 
-import Box
 import Poset
 import Lib
 import TableauFoundation

@@ -1,11 +1,17 @@
 # human-style
+## To-do tomorrow
+- Write low-level library implication moves: backward-reasoning, forward-reasoning
+- Write existential instantiation move
+- Write library-style existence move
+
+
 ## To-do
-- Find a better way of writing commands involving a Tableau with a single box (constant repeating boxToTabMove isn't fun, and constantly specifying 0 for "first box" isn't either, even after we boxToTabMove everything at the top of the file)
-- Implement a more legitimate system of representing Free variables in library statements for matching purposes via the HExpr system
-- Think about how the variables in the QZone should behave when it comes to library equivalences, one-way implications and - probably most relevantly - existence solving.
-- Implement lower-level library moves which clearly distinguish equivalences and implications, as explained in one of the comments in NewMoves
+- Do we need different types of constants? Probably not - slightly paradoxical to have them if we don't have types. Remove soon.
+- Do we need a QZone in Library Equivalences? I think probably not, unless we want to significantly revamp how we're handling Library Equivalences. Remove soon (keeping for now in case it turns out to be useful).
+- Think about how the variables in the QZone should behave when it comes to existence solving.
 - Improve the system of finding/using ExternalName's when peeling and printing
 - Think about and implement existence solving via the library
-- Improve how we track freeVariables in expressions (probably just use a function to compute free variables from an expression rather than storing - it's not THAT slow. Otherwise, compute it whenever we need to update)
-- Parser for inputting LibraryEquivalence's (bit of a nightmare right now)
+- Parser for inputting LibraryEquivalence's
 - (longer term) Think about and implement existence solving in a more thorough way as discussed in document
+- (longer term) Think about how we're going to handle algebra and computation (e.g. a + a should be 2a)
+- (longer term) Think about how we're going to populate the library

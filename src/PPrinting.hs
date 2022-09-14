@@ -1,6 +1,5 @@
 module PPrinting where
 
-import Box
 import Poset
 import Lib
 import TableauFoundation
@@ -14,11 +13,15 @@ import Data.List
 import Control.Monad.State
 
 import Debug.Trace
+import Text.Read (Lexeme(String))
 
 
 -- << Pretty printing expressions >>
 -- If bound variable, will look for an external name and use that if it's not taken - if it doesn't exist, or is taken, it will use an internal name
 -- If free variable, will do the same thing, but looks to QZone to do this
+
+htmlEntityCodes :: HashMap String String
+htmlEntityCodes = M.fromList [("delta", "\948"), ("epsilon", "\949"), ("theta", "\952")]
 
 data PrintingState = PS
   { getShowMap :: HashMap InternalName ExternalName
@@ -59,10 +62,53 @@ pprintBinderM b sug sc = do
   s <- pprintExprM $ instantiate (Free m) sc
   return $ b ++ sug' ++ ", " ++ s
 
+pprintBinderWithDomM :: String -> Maybe ExternalName -> String -> Expr -> Scoped -> State PrintingState String
+pprintBinderWithDomM b sug intermediateStr dom sc = do
+  (m, ExternalName sug') <- maybe getFresh getSuggestion sug
+  s <- pprintExprM $ instantiate (Free m) sc
+  do
+    domOut <- pprintExprM dom
+    return $ b ++ sug' ++ intermediateStr ++ domOut ++ ", " ++ s
+
+pprintWithStringBetween :: Expr -> Expr -> String -> State PrintingState String
+pprintWithStringBetween a b str = do
+  outA <- pprintExprM a
+  outB <- pprintExprM b
+  return $ outA ++ str ++ outB
+
 pprintExprM :: Expr -> State PrintingState String
 -- special patterns (all these must come first!)
+pprintExprM (Forall sug sc@(Sc (Implies (BApp (Pred "element_of") (B 0) dom) q))) = pprintBinderWithDomM "\8704" sug " \8712 " dom (Sc q)
+pprintExprM (Exists sug sc@(Sc (And (BApp (Pred "element_of") (B 0) dom) q))) = pprintBinderWithDomM "\8707" sug " \8712 " dom (Sc q)
+pprintExprM (Forall sug sc@(Sc (Implies (BApp (Pred "real_greater_than") (B 0) expr) q))) = pprintBinderWithDomM "\8704" sug " > " expr (Sc q)
+pprintExprM (Exists sug sc@(Sc (And (BApp (Pred "real_greater_than") (B 0) expr) q))) = pprintBinderWithDomM "\8707" sug " > " expr (Sc q)
+pprintExprM (Forall sug sc@(Sc (Implies (BApp (Pred "real_lesser_than") (B 0) expr) q))) = pprintBinderWithDomM "\8704" sug " < " expr (Sc q)
+pprintExprM (Exists sug sc@(Sc (And (BApp (Pred "real_lesser_than") (B 0) expr) q))) = pprintBinderWithDomM "\8707" sug " < " expr (Sc q)
+
 pprintExprM (Forall sug sc) = pprintBinderM "\8704" sug sc
 pprintExprM (Exists sug sc) = pprintBinderM "\8707" sug sc
+
+pprintExprM (Implies a b) = do
+  outA <- pprintExprM a
+  outB <- pprintExprM b
+  return $ "(" ++ outA ++ " \8658  " ++ outB ++ ")"
+
+pprintExprM (And a b) = do
+  outA <- pprintExprM a
+  outB <- pprintExprM b
+  return $ "(" ++ outA ++ " \8743 " ++ outB ++ ")"
+
+pprintExprM (BApp (Pred "element_of") a dom) = pprintWithStringBetween a dom " \8712 "
+pprintExprM (BApp (Pred "real_lesser_than") a dom) = pprintWithStringBetween a dom " < "
+pprintExprM (BApp (Pred "real_greater_than") a dom) = pprintWithStringBetween a dom " > "
+pprintExprM (TApp (Pred "function") f x y) = do
+  fOut <- pprintExprM f
+  xOut <- pprintExprM x
+  yOut <- pprintExprM y
+  return $ fOut ++ ":" ++ xOut ++ "\8594" ++ yOut
+
+pprintExprM (Con (Obj "naturals")) = do return "\8469"
+
 -- general patterns
 pprintExprM t@(App _ _) = do
   let (f, x) = getAppChain t
@@ -71,7 +117,11 @@ pprintExprM t@(App _ _) = do
   return $ fs ++ "(" ++ intercalate ", " xs ++ ")"
 pprintExprM (Free x) = do
   (PS m _ _) <- get
-  return $ getExternalName $ m M.! x
+  let name = getExternalName $ m M.! x
+  let htmlCode = name `M.lookup` htmlEntityCodes
+  return $ case htmlCode of
+    Just something -> something
+    _ -> name
 pprintExprM (Con s) = return $ strFromConStr s
 pprintExprM (Abs sug sc) = pprintBinderM "λ" sug sc
 pprintExprM (B _) = error "term not closed"
@@ -122,9 +172,14 @@ pprintExpr e = evalState (pprintExprM e) (PS mempty mempty 0)
 showQZoneWithNamesNoDeps :: HashMap InternalName ExternalName -> QZone -> String
 showQZoneWithNamesNoDeps showMap qZone@(Poset set rel) = let
   dealWithEmpty str = if str /= "" then str else "(empty)"
-  qListToStr = dealWithEmpty . intercalate ", " . map (\qVar -> (if qVarGetQuantifier qVar == "Forall" then "\8704" else "\8707") ++ getExternalName (showMap M.! qVarGetInternalName qVar))
+  qListToStr = dealWithEmpty . intercalate ", " . map (\qVar -> (if qVarGetQuantifier qVar == "Forall" then "\8704" else "\8707") ++ handleHtmlCodes (getExternalName (showMap M.! qVarGetInternalName qVar)))
   qZoneStr = qListToStr $ orderQZone qZone
-  in "QZone: " ++ qZoneStr ++ "\n"
+  in qZoneStr ++ "\n"
+  where
+    handleHtmlCodes :: String -> String
+    handleHtmlCodes str = case str `M.lookup` htmlEntityCodes of
+      Just something -> something
+      _ -> str
 
 showQZoneWithNames :: HashMap InternalName ExternalName -> QZone -> String
 showQZoneWithNames showMap qZone@(Poset set rel) = let
@@ -132,7 +187,7 @@ showQZoneWithNames showMap qZone@(Poset set rel) = let
   qListToStr = dealWithEmpty . intercalate ", " . map (\qVar -> (if qVarGetQuantifier qVar == "Forall" then "\8704" else "\8707") ++ getExternalName (showMap M.! qVarGetInternalName qVar))
   qZoneStr = qListToStr $ orderQZone qZone
   depsStr = dealWithEmpty . intercalate ", " $ map (\(q1, q2) -> getExternalName (showMap M.! qVarGetInternalName q1) ++ "<" ++ getExternalName (showMap M.! qVarGetInternalName q2)) rel
-  in "QZone: " ++ qZoneStr ++ "\n" ++ "Deps: " ++ depsStr ++ "\n"
+  in qZoneStr ++ "\n" ++ "Deps: " ++ depsStr ++ "\n"
 
 showQZoneWithNamesRaw ::QZone -> String
 showQZoneWithNamesRaw qZone@(Poset set rel) = let
@@ -140,7 +195,7 @@ showQZoneWithNamesRaw qZone@(Poset set rel) = let
   qListToStr = dealWithEmpty . intercalate ", " . map (\qVar -> (if qVarGetQuantifier qVar == "Forall" then "\8704" else "\8707") ++ show (qVarGetInternalName qVar))
   qZoneStr = qListToStr $ orderQZone qZone
   depsStr = dealWithEmpty . intercalate ", " $ map (\(q1, q2) ->  show (qVarGetInternalName q1) ++ "<" ++ show (qVarGetInternalName q2)) rel
-  in "QZone: " ++ qZoneStr ++ "\n" ++ "Deps: " ++ depsStr ++ "\n"
+  in qZoneStr ++ "\n" ++ "Deps: " ++ depsStr ++ "\n"
 
 
 pprintQBox :: QBox -> String

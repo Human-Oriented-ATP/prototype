@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: e74c2169ef164e9d3c135cb3f606aafe8b2e87faf438f4d293603df448c1bcde
+-- hash: 143da1ca6592c3cf9fb43549db9f238a920f445f5d6a0159e007f2bc088919a3
 
 name:           human-style
 version:        0.1.0.0
@@ -28,18 +28,16 @@ source-repository head
 library
   exposed-modules:
       Automation
-      Box
+      BasicMoves
+      HoleExpr
       Lib
-      Library
-      MovesFoundation
-      NewMoves
+      LibraryMoves
       Parser
       Poset
       PPrinting
       Prisoner
       TableauFoundation
-      Unification
-      UnificationPaper
+      Testing
   other-modules:
       Paths_human_style
   hs-source-dirs:

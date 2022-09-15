@@ -1,22 +1,23 @@
-module Poset (
-    Poset (..),
-    addSetMember,
-    addRel,
-    addRels,
-    isBefore,
-    hasParent
-) where
+module Poset where
 
 import Data.List
 import Debug.Trace
+import Control.Applicative.Combinators (count)
 
 -- | Poset type to store information about quantification order. Probably very inefficient for now, but this can be optimised I'm sure
 -- In the relations list, a tuple (x_1, x_2) indicates that x_1 < x_2, i.e. x_1 must come before x_2
-data Poset a = Poset {getSet :: [a], getRelations :: [(a, a)]} deriving (Eq, Show)
+data Poset a = Poset {getSet :: [a], getRelations :: [(a, a)]} deriving (Eq, Show, Read)
 
 -- | Adds member to set, leaving relation untouched
 addSetMember :: (Eq a) => Poset a -> a -> Poset a
-addSetMember (Poset set rel) x = Poset (x:set) rel
+addSetMember (Poset set rel) x = Poset (set++[x]) rel
+
+-- | Removes a member from the Poset, including from all dependencies
+removeMember :: (Eq a) => Poset a -> a -> Poset a
+removeMember (Poset set rel) x = let
+  newSet = filter (/= x) set
+  newRel = filter (\(a, b) -> a /= x && b /= x) rel
+  in Poset newSet newRel
 
 -- | Checks if a Poset is actually transitive
 isTransitive :: (Eq a) => Poset a -> Bool
@@ -34,24 +35,21 @@ isAsymmetric (Poset set rel) = and [not (((x,y) `elem` rel) && ((y,x) `elem` rel
 isRealPoset :: (Eq a) => Poset a -> Bool
 isRealPoset poset = isTransitive poset && isAsymmetric poset
 
--- | Checks if a Poset is transitively closed. If it isn't then exhibits a witness (elements x, y such that we need x < y for transitivity). If it is transitively closed, return Nothing.
-transitivelyCloseIncr :: (Eq a) => Poset a -> Maybe (a, a)
-transitivelyCloseIncr (Poset set rel) =
+-- | Checks if a Poset is transitively closed. If it isn't then exhibits witnesses to this.
+transitivelyCloseCounterExamples :: (Eq a) => Poset a -> [(a, a)]
+transitivelyCloseCounterExamples (Poset set rel) =
   let counterExamples = [(x, y, z) | x <- set, y <- set, z <- set, (((x,y) `elem` rel) && ((y,z) `elem` rel)) && (not ((x, z) `elem` rel))]
-  in
-    if counterExamples == [] then Nothing
-    else Just $ let ((x, y, z):rest) = counterExamples in (x, z)
+  in map (\(x, y, z) -> (x, z)) (nub counterExamples)
 
 -- | Takes a Poset and try to extend it to a genuine mathematical poset which is transitively closed
 transitivelyClose :: (Eq a) => Poset a -> Maybe (Poset a)
 transitivelyClose poset =
-  let witness = transitivelyCloseIncr poset
+  let witnesses = transitivelyCloseCounterExamples poset
   in
-    if witness == Nothing then (if isRealPoset poset then Just poset else Nothing)
+    if witnesses == [] then (if isRealPoset poset then Just poset else Nothing)
     else
       let (Poset set rel) = poset
-          Just (x, y) = witness
-          newPoset = Poset set ((x,y):rel)
+          newPoset = Poset set (witnesses ++ rel)
       in if isAsymmetric newPoset then transitivelyClose newPoset else Nothing
 
 -- | Adds (a, b) to relation. If the result is not a Poset, returns Nothing.
@@ -65,6 +63,11 @@ addRels (Poset set rel) toAdd = transitivelyClose (Poset set (toAdd ++ rel))
 isBefore :: (Eq a) => Poset a -> a -> a -> Bool
 isBefore (Poset set rel) x y = (x, y) `elem` rel
 
+-- | isAfter poset a b = True only when a > b in the poset
+isAfter :: (Eq a) => Poset a -> a -> a -> Bool
+isAfter (Poset set rel) x y = (y, x) `elem` rel
+
 -- | Given a poset and an element, x, of the poset, checks if there are any y such that y < x
 hasParent :: (Eq a) => Poset a -> a -> Bool
 hasParent (Poset set rel) x = or [(y, x) `elem` rel | y <- set]
+

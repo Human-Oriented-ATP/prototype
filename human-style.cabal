@@ -4,7 +4,11 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
+<<<<<<< HEAD
 -- hash: d8f4611f8ec56cecdf9f6fe5671436a6754dec151d4390655878540ef9700514
+=======
+-- hash: 841edded6eaeb255f9ff538a03e913bcbb2af7013f781810783fe3597a71917e
+>>>>>>> InitialLibraryChanges
 
 name:           human-style
 version:        0.1.0.0
@@ -27,14 +31,25 @@ source-repository head
 
 library
   exposed-modules:
-      Box
+      Automation
+      BasicMoves
+      ExistentialMoves
+      HoleExpr
       Lib
+<<<<<<< HEAD
       MovesFoundation
+=======
+      LibraryMoves
+>>>>>>> InitialLibraryChanges
       Parser
       Poset
       PPrinting
       Prisoner
       TableauFoundation
+<<<<<<< HEAD
+=======
+      Testing
+>>>>>>> InitialLibraryChanges
   other-modules:
       Paths_human_style
   hs-source-dirs:

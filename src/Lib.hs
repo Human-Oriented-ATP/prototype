@@ -19,13 +19,14 @@ import Data.List
 
 -- | A type to represent external variable names.
 newtype ExternalName = ExternalName { getExternalName :: String }
-  deriving (Eq, Ord, Show, Hashable)
+  deriving (Eq, Ord, Show, Hashable, Read)
 
 type InternalName = Int
 
 -- For convenience
 instance IsString ExternalName where
   fromString = ExternalName
+
 
 -- | The type of terms with free variables of type v.
 data Expr
@@ -39,10 +40,13 @@ data Expr
     -- ^ A constant (eg the naturals, or the sin function).
   | B Int
     -- ^ A bound variable
-  deriving (Eq, Show)
+  deriving (Eq, Show, Read) 
+
+-- \forall x, \forall y, x + y = y + x
+-- \forall a, \forall b, a + b = b + a
 
 newtype Scoped = Sc Expr
-  deriving (Eq, Show)
+  deriving (Eq, Show, Read)
 
 -- | Check for equality of expressions up to alpha-equivalence.
 class AlphaEq t where
@@ -63,8 +67,8 @@ instance AlphaEq Expr where
 
 -- | Example: Peano's first axiom as an expression
 peanoOne :: Expr
-peanoOne = App (Con "forall") $ Abs (Just "x") $ Sc $ App (Con "not") $
-  App (App (Con "eq") $ App (Con "succ") (B 0)) $ Con "zero"
+peanoOne = App (Con "forall") $ Abs (Just "x") $ Sc $ App (Con "forall") $ Abs (Just "y") $ Sc $ App (Con "not") $
+  App (App (Con "eq") $ App (Con "succ") (B 0)) $ App (Con "succ") (B 1)
 
 apps :: Expr -> [Expr] -> Expr
 apps e [] = e
@@ -85,33 +89,57 @@ pattern UApp f x = App (Con f) x
 
 -- | Binary application of a constant function to an expression.
 pattern BApp :: String -> Expr -> Expr -> Expr
-pattern BApp f x y = App (App (Con f) x) y
+pattern BApp f x y = App (App (Con  f) x) y
+
+pattern TApp :: String -> Expr -> Expr -> Expr -> Expr
+pattern TApp f x y z = App (App (App (Con f) x) y) z
+
+pattern QApp :: String -> Expr -> Expr -> Expr -> Expr -> Expr
+pattern QApp f a b c d = App (App (App (App (Con f) a) b) c) d
+
+pattern PApp :: String -> Expr -> Expr -> Expr -> Expr -> Expr -> Expr
+pattern PApp f a b c d e = App (App (App (App (App (Con f) a) b) c) d) e
+
+pattern HApp :: String -> Expr -> Expr -> Expr -> Expr -> Expr -> Expr -> Expr
+pattern HApp f a b c d e g = App (App (App (App (App (App (Con f) a) b) c) d) e) g
+
+pattern TAnd :: Expr -> Expr -> Expr -> Expr
+pattern TAnd x y z = And (And x y) z
+
+pattern QAnd :: Expr -> Expr -> Expr -> Expr -> Expr
+pattern QAnd a b c d = And (And (And a b) c) d
+
+pattern PAnd :: Expr -> Expr -> Expr -> Expr -> Expr -> Expr
+pattern PAnd a b c d e = And (And (And (And a b) c) d) e
+
+pattern HAnd :: Expr -> Expr -> Expr -> Expr -> Expr -> Expr -> Expr
+pattern HAnd a b c d e f = And (And (And (And (And a b) c) d) e) f
 
 -- | The conjunction of two expressions.
 pattern And :: Expr -> Expr -> Expr
-pattern And x y = BApp "and" x y
+pattern And x y = App (App (Con "and") x) y
 
 -- | The disjunction of two expressions.
 pattern Or :: Expr -> Expr -> Expr
-pattern Or x y = BApp "or" x y
+pattern Or x y = App (App (Con "or") x) y
 
 -- | The implication of two expressions.
 pattern Implies :: Expr -> Expr -> Expr
-pattern Implies x y = BApp "implies" x y
+pattern Implies x y = App (App (Con "implies") x) y
 
 -- | The negation of an expression.
 pattern Not :: Expr -> Expr
-pattern Not x = UApp "not" x
+pattern Not x = App (Con "not") x
 
 -- | Equality of two expressions.
 pattern Eq :: Expr -> Expr -> Expr
-pattern Eq x y = BApp "eq" x y
+pattern Eq x y = App (App (Con "eq") x) y
 
 pattern Forall :: Maybe ExternalName -> Scoped -> Expr
-pattern Forall x y = UApp "forall" (Abs x y)
+pattern Forall x y = App (Con "forall") (Abs x y)
 
 pattern Exists :: Maybe ExternalName -> Scoped -> Expr
-pattern Exists x y = UApp "exists" (Abs x y)
+pattern Exists x y = App (Con "exists") (Abs x y)
 
 abstract :: InternalName -> Expr -> Scoped
 abstract n e = Sc (nameTo 0 e) where
@@ -130,7 +158,7 @@ instantiate im (Sc b) = replace 0 b where
   replace _ t = t
 
 forall :: Maybe ExternalName -> InternalName -> Expr -> Expr
-forall m x p = Forall m (abstract x p)
+forall m x exp = Forall m (abstract x exp)
 
 exists :: Maybe ExternalName -> InternalName -> Expr -> Expr
 exists m x p = Exists m (abstract x p)
@@ -143,6 +171,7 @@ instantiateForall :: Expr -> Expr -> Maybe (Maybe ExternalName, Expr)
 instantiateForall (Forall nm p) x = Just (nm, instantiate x p)
 instantiateForall _            _  = Nothing
 
+
 -- | Forget all name suggestions.
 forgetSuggestions :: Expr -> Expr
 forgetSuggestions (App f x)      = App (forgetSuggestions f) (forgetSuggestions x)
@@ -151,26 +180,13 @@ forgetSuggestions (Free m)       = Free m
 forgetSuggestions (Con s)        = Con s
 forgetSuggestions (B i)          = B i
 
-type Agency t = InternalName -> t
 
-enterForall :: Agency (Expr -> Maybe (Maybe ExternalName, Expr))
-enterForall root e = instantiateForall e (Free root)
-
--- NOTE: For now, using integers as InternalNames, this will need a global context to work. Can fix this with the 'interaction monad' idea, or can switch to lists for InternalName's if preferable.
-{-
-swapForalls :: Agency (Expr -> Maybe Expr)
-swapForalls root e = do
-  (x0, first)  <- enterForall (("x", 0) : root) e
-  (x1, second) <- enterForall (("x", 1) : root) first
-  return $ forall x1 (("x", 1) : root) (forall x0 (("x", 0) : root) second)
--}
-
--- This could be wrong now that InternalName's are integers
-unsafeRunAgency :: Agency t -> t
-unsafeRunAgency x = x 0
-
-
--- Moved pretty printing stuff to the PPrinting Module
+getFreeVars :: Expr -> [InternalName]
+getFreeVars (App e e') = getFreeVars e `union` getFreeVars e'
+getFreeVars (Abs exNm (Sc sc)) = getFreeVars sc
+getFreeVars (Free n) = [n]
+getFreeVars (Con con) = []
+getFreeVars (B i) = []
 
 -- | Nothing right now.
 someFunc :: IO ()

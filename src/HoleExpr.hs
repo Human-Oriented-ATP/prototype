@@ -18,7 +18,7 @@ data HoleExpr
     -- ^ An abstraction (eg \(x \mapsto x^2\)).
   | HoleFree InternalName
     -- ^ A free variable.
-  | HoleCon ConstantString
+  | HoleCon String
     -- ^ A constant (eg the naturals, or the sin function).
   | HoleB Int
     -- ^ A bound variable
@@ -71,17 +71,6 @@ mergeSubstitutions s1 s2 =
     let attempt = nub (s1 ++ s2)
         agree = map fst attempt == nub (map fst attempt)
     in if agree then Just attempt else Nothing
-
--- The idea is to check that an expressions is a TERM not a formula
-checkIsTerm :: Expr -> Bool
-checkIsTerm (App e1 e2) = checkIsTerm e1 && checkIsTerm e2
-checkIsTerm (Abs _ _) = False
-checkIsTerm (Free _) = True
-checkIsTerm (B _) = True
-checkIsTerm (Con (Operator _)) = True
-checkIsTerm (Con (Obj _)) = True
-checkIsTerm _ = False
-
 -- Asks if we can get the second expression from the first by substituting terms for holes correctly.
 matchExpressions :: HoleExpr -> Expr -> Maybe Substitution
 matchExpressions (HoleApp e1 e2) (App e1' e2') = do
@@ -92,7 +81,7 @@ matchExpressions (HoleAbs _ (HoleSc sc1)) (Abs _ (Sc sc2)) = matchExpressions sc
 matchExpressions (HoleCon s) (Con s') = if s == s' then Just [] else Nothing
 matchExpressions (HoleB i) (B i') = if i == i' then Just [] else Nothing
 matchExpressions (HoleFree n) (Free n') = if n == n' then Just [] else Nothing
-matchExpressions (Hole i) expr = if checkIsTerm expr then Just [(i, expr)] else Nothing
+matchExpressions (Hole i) expr = Just [(i, expr)]-- IMPROVEMENT - currently doesn't check that expr is a term (as now have removed constant types)
 matchExpressions _ _ = Nothing
 
 -- Performs a given substitution on an expression

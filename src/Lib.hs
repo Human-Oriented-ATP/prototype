@@ -27,16 +27,6 @@ type InternalName = Int
 instance IsString ExternalName where
   fromString = ExternalName
 
--- Type of constant, for determining if something is a term or not
-data ConstantString = Operator String | Pred String | Quant String | Log String | Obj String
-  deriving (Eq, Show, Read)
-
-strFromConStr :: ConstantString -> String
-strFromConStr (Operator s) = s
-strFromConStr (Pred s) = s
-strFromConStr (Quant s) = s
-strFromConStr (Log s) = s
-strFromConStr (Obj s) = s
 
 -- | The type of terms with free variables of type v.
 data Expr
@@ -46,11 +36,14 @@ data Expr
     -- ^ An abstraction (eg \(x \mapsto x^2\)).
   | Free InternalName
     -- ^ A free variable.
-  | Con ConstantString
+  | Con String
     -- ^ A constant (eg the naturals, or the sin function).
   | B Int
     -- ^ A bound variable
   deriving (Eq, Show, Read) 
+
+-- \forall x, \forall y, x + y = y + x
+-- \forall a, \forall b, a + b = b + a
 
 newtype Scoped = Sc Expr
   deriving (Eq, Show, Read)
@@ -74,8 +67,8 @@ instance AlphaEq Expr where
 
 -- | Example: Peano's first axiom as an expression
 peanoOne :: Expr
-peanoOne = App (Con (Quant "forall")) $ Abs (Just "x") $ Sc $ App (Con (Log "not")) $
-  App (App (Con (Pred "eq")) $ App (Con (Operator "succ")) (B 0)) $ Con (Obj "zero")
+peanoOne = App (Con "forall") $ Abs (Just "x") $ Sc $ App (Con "forall") $ Abs (Just "y") $ Sc $ App (Con "not") $
+  App (App (Con "eq") $ App (Con "succ") (B 0)) $ App (Con "succ") (B 1)
 
 apps :: Expr -> [Expr] -> Expr
 apps e [] = e
@@ -91,23 +84,23 @@ getAppChain (App f x) = (g, x:t)
 getAppChain t = (t, [])
 
 -- | Unary application of a constant function to an expression.
-pattern UApp :: ConstantString -> Expr -> Expr
+pattern UApp :: String -> Expr -> Expr
 pattern UApp f x = App (Con f) x
 
 -- | Binary application of a constant function to an expression.
-pattern BApp :: ConstantString -> Expr -> Expr -> Expr
+pattern BApp :: String -> Expr -> Expr -> Expr
 pattern BApp f x y = App (App (Con  f) x) y
 
-pattern TApp :: ConstantString -> Expr -> Expr -> Expr -> Expr
+pattern TApp :: String -> Expr -> Expr -> Expr -> Expr
 pattern TApp f x y z = App (App (App (Con f) x) y) z
 
-pattern QApp :: ConstantString -> Expr -> Expr -> Expr -> Expr -> Expr
+pattern QApp :: String -> Expr -> Expr -> Expr -> Expr -> Expr
 pattern QApp f a b c d = App (App (App (App (Con f) a) b) c) d
 
-pattern PApp :: ConstantString -> Expr -> Expr -> Expr -> Expr -> Expr -> Expr
+pattern PApp :: String -> Expr -> Expr -> Expr -> Expr -> Expr -> Expr
 pattern PApp f a b c d e = App (App (App (App (App (Con f) a) b) c) d) e
 
-pattern HApp :: ConstantString -> Expr -> Expr -> Expr -> Expr -> Expr -> Expr -> Expr
+pattern HApp :: String -> Expr -> Expr -> Expr -> Expr -> Expr -> Expr -> Expr
 pattern HApp f a b c d e g = App (App (App (App (App (App (Con f) a) b) c) d) e) g
 
 pattern TAnd :: Expr -> Expr -> Expr -> Expr
@@ -124,29 +117,29 @@ pattern HAnd a b c d e f = And (And (And (And (And a b) c) d) e) f
 
 -- | The conjunction of two expressions.
 pattern And :: Expr -> Expr -> Expr
-pattern And x y = App (App (Con (Log "and")) x) y
+pattern And x y = App (App (Con "and") x) y
 
 -- | The disjunction of two expressions.
 pattern Or :: Expr -> Expr -> Expr
-pattern Or x y = App (App (Con (Log "or")) x) y
+pattern Or x y = App (App (Con "or") x) y
 
 -- | The implication of two expressions.
 pattern Implies :: Expr -> Expr -> Expr
-pattern Implies x y = App (App (Con (Log "implies")) x) y
+pattern Implies x y = App (App (Con "implies") x) y
 
 -- | The negation of an expression.
 pattern Not :: Expr -> Expr
-pattern Not x = App (Con (Log "not")) x
+pattern Not x = App (Con "not") x
 
 -- | Equality of two expressions.
 pattern Eq :: Expr -> Expr -> Expr
-pattern Eq x y = App (App (Con (Pred "eq")) x) y
+pattern Eq x y = App (App (Con "eq") x) y
 
 pattern Forall :: Maybe ExternalName -> Scoped -> Expr
-pattern Forall x y = App (Con (Quant "forall")) (Abs x y)
+pattern Forall x y = App (Con "forall") (Abs x y)
 
 pattern Exists :: Maybe ExternalName -> Scoped -> Expr
-pattern Exists x y = App (Con (Quant "exists")) (Abs x y)
+pattern Exists x y = App (Con "exists") (Abs x y)
 
 abstract :: InternalName -> Expr -> Scoped
 abstract n e = Sc (nameTo 0 e) where
@@ -165,7 +158,7 @@ instantiate im (Sc b) = replace 0 b where
   replace _ t = t
 
 forall :: Maybe ExternalName -> InternalName -> Expr -> Expr
-forall m x p = Forall m (abstract x p)
+forall m x exp = Forall m (abstract x exp)
 
 exists :: Maybe ExternalName -> InternalName -> Expr -> Expr
 exists m x p = Exists m (abstract x p)
@@ -177,6 +170,7 @@ instantiateAbs _         _ = Nothing
 instantiateForall :: Expr -> Expr -> Maybe (Maybe ExternalName, Expr)
 instantiateForall (Forall nm p) x = Just (nm, instantiate x p)
 instantiateForall _            _  = Nothing
+
 
 -- | Forget all name suggestions.
 forgetSuggestions :: Expr -> Expr

@@ -179,24 +179,23 @@ clearEmptyBoxes tab@(Tableau qZone boxes) =
 -- Peels universal target
 -- targ i : forall x, P(x)
 peelUniversalTargBox :: Int -> BoxMove
-peelUniversalTargBox i qBox@(qZone, Box hyps targs) = do
+peelUniversalTargBox i qBox@(qZone@(Poset set deps), Box hyps targs) = do
     expr@(Forall exNm sc) <- getTarg i targs
-    let Poset set deps = qZone
-    let freeVars = map (\inNm -> head $ filter (\q -> qVarGetInternalName q == inNm) set) $ getFreeVars expr
     let peeledName = getNewInternalName qZone
     let peeledExternalName = getNewExternalNamePeel exNm qZone
     let peeledVariable = QVar "Forall" peeledExternalName peeledName
+    
+    let freeVars = map (\inNm -> head $ filter (\q -> qVarGetInternalName q == inNm) set) $ getFreeVars expr
     let newDeps = [(y, peeledVariable) | y <- freeVars, qVarGetQuantifier y == "Exists"] -- We only need to add dependencies relating to exists, because dependencies between forall's is given by this
     newQZone <- addRels (addSetMember qZone peeledVariable) newDeps
-    (qZone, newBox) <- updateTarg i (instantiate (Free peeledName) sc) qBox
+    (_, newBox) <- updateTarg i (instantiate (Free peeledName) sc) qBox
     return $ (newQZone, newBox)
 
 -- Peels existential target, creating a metavariable
 -- targ i : exists x, P(x)
 peelExistentialTargBox :: Int -> BoxMove
-peelExistentialTargBox i qBox@(qZone, Box hyps targs) = do
+peelExistentialTargBox i qBox@(qZone@(Poset set deps), Box hyps targs) = do
     expr@(Exists exNm sc) <- getTarg i targs
-    let Poset set deps = qZone
     let freeVars = map (\inNm -> head $ filter (\q -> qVarGetInternalName q == inNm) set) $ getFreeVars expr
     let peeledName = getNewInternalName qZone
     let peeledExternalName = getNewExternalNamePeel exNm qZone
@@ -210,9 +209,8 @@ peelExistentialTargBox i qBox@(qZone, Box hyps targs) = do
 -- hyp i : exists x, P(x)
 -- IMPROVEMENT - currently find new external name to prevent confusing outputs after a single move, but maybe this should happen at the print stage? Think about this.
 peelExistentialHypBox :: Int -> BoxMove
-peelExistentialHypBox i qBox@(qZone, Box hyps targs) = do
+peelExistentialHypBox i qBox@(qZone@(Poset set deps), Box hyps targs) = do
     expr@(Exists exNm sc) <- getHyp i hyps
-    let Poset set deps = qZone
     let freeVars = map (\inNm -> head $ filter (\q -> qVarGetInternalName q == inNm) set) $ getFreeVars expr
     let peeledName = getNewInternalName qZone
     let peeledExternalName = getNewExternalNamePeel exNm qZone
@@ -226,9 +224,8 @@ peelExistentialHypBox i qBox@(qZone, Box hyps targs) = do
 -- This move keeps the original hypothesis, because it's dangerous otherwise
 -- hyp i : forall x, P(x)
 peelUniversalHypBox :: Int -> BoxMove
-peelUniversalHypBox i qBox@(qZone, Box hyps targs) = do
+peelUniversalHypBox i qBox@(qZone@(Poset set deps), Box hyps targs) = do
     expr@(Forall exNm sc) <- getHyp i hyps
-    let Poset set deps = qZone
     let freeVars = map (\inNm -> head $ filter (\q -> qVarGetInternalName q == inNm) set) $ getFreeVars expr
     let peeledName = getNewInternalName qZone
     let peeledExternalName = getNewExternalNamePeel exNm qZone
@@ -251,7 +248,7 @@ tidyImplInTarg i boxInd tab@(Tableau qZone boxes) = do
     let newTargs = [q]
     let newBox = Box newHyps newTargs
     (_, remainingBox) <- removeTarg i qBox
-    updateBox boxInd remainingBox tab >>= addBox newBox >>= clearEmptyBoxes
+    updateBox boxInd newBox tab >>= addBox remainingBox >>= clearEmptyBoxes
 
 -- Splits and hypotheses up
 -- hyp i : P ^ Q
@@ -286,6 +283,15 @@ modusPonensBox i j qBox@(qZone, Box hyps targs) = do
     let newHyp = instantiate (Free . head $ successes) (Sc qx)
     addHyp newHyp qBox
 
+rawModusPonensBox :: Int -> Int -> BoxMove
+rawModusPonensBox i j qBox@(qZone, Box hyps targs) = do
+    expr@(Implies p q) <- getHyp i hyps
+    p' <- getHyp j hyps
+    guard $ p' == p
+    addHyp q qBox
+
+
+
 -- Performs backwards reasoning on hypothesis i and target j
 -- hyp i  : P \implies Q
 -- targ j : Q
@@ -312,6 +318,7 @@ commitToHypothesis i boxInd tab@(Tableau qZone boxes) = do
     (_, useQBox) <- updateHyp i q qBox
     newTab <- updateBox boxInd useQBox tab
     addBox deducePBox newTab
+
 
 
 -- <<< QUALITY OF LIFE MOVES (IMPLEMENTED QUESTIONABLY) >>>

@@ -1,11 +1,4 @@
-module Poset (
-    Poset (..),
-    addSetMember,
-    addRel,
-    addRels,
-    isBefore,
-    hasParent
-) where
+module Poset where
 
 import Data.List
 import Debug.Trace
@@ -17,7 +10,14 @@ data Poset a = Poset {getSet :: [a], getRelations :: [(a, a)]} deriving (Eq, Sho
 
 -- | Adds member to set, leaving relation untouched
 addSetMember :: (Eq a) => Poset a -> a -> Poset a
-addSetMember (Poset set rel) x = Poset (x:set) rel
+addSetMember (Poset set rel) x = Poset (set++[x]) rel
+
+-- | Removes a member from the Poset, including from all dependencies
+removeMember :: (Eq a) => Poset a -> a -> Poset a
+removeMember (Poset set rel) x = let
+  newSet = filter (/= x) set
+  newRel = filter (\(a, b) -> a /= x && b /= x) rel
+  in Poset newSet newRel
 
 -- | Checks if a Poset is actually transitive
 isTransitive :: (Eq a) => Poset a -> Bool
@@ -63,6 +63,11 @@ addRels (Poset set rel) toAdd = transitivelyClose (Poset set (toAdd ++ rel))
 isBefore :: (Eq a) => Poset a -> a -> a -> Bool
 isBefore (Poset set rel) x y = (x, y) `elem` rel
 
+-- | isAfter poset a b = True only when a > b in the poset
+isAfter :: (Eq a) => Poset a -> a -> a -> Bool
+isAfter (Poset set rel) x y = (y, x) `elem` rel
+
 -- | Given a poset and an element, x, of the poset, checks if there are any y such that y < x
 hasParent :: (Eq a) => Poset a -> a -> Bool
 hasParent (Poset set rel) x = or [(y, x) `elem` rel | y <- set]
+

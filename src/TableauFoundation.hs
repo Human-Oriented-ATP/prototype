@@ -38,6 +38,13 @@ data Tableau = Tableau {getQZone :: QZone,
                         deriving (Eq, Read, Show)
 
 
+
+
+
+
+
+-- <<< FOR INTERFACE ? >>>
+
 -- Another version of show for passing Tableau's to external interface and back
 tableauToString :: Tableau -> String
 tableauToString (Tableau qZone boxes) = "a"

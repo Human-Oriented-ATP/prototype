@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 143da1ca6592c3cf9fb43549db9f238a920f445f5d6a0159e007f2bc088919a3
+-- hash: 841edded6eaeb255f9ff538a03e913bcbb2af7013f781810783fe3597a71917e
 
 name:           human-style
 version:        0.1.0.0
@@ -29,6 +29,7 @@ library
   exposed-modules:
       Automation
       BasicMoves
+      ExistentialMoves
       HoleExpr
       Lib
       LibraryMoves

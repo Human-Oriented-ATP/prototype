@@ -382,12 +382,12 @@ libBackwardReasoning libImpl@(LibraryImplication libQZone conditions consequents
             let newState = (filter (\(i, _) -> i /= condInd) labelledConds
                             , filter (\(i, _) -> i /= hypInd) labelledHyps)
             let futureStates = uncurry exploreSubstitutionTree newState newSub
-            if null futureStates then return ((labelledConds, labelledHyps), previousSub)
+            if null futureStates then return ((labelledConds, labelledHyps), newSub)
             else futureStates
     
     let validConsequentSubs = catMaybes [matchExpressions consequent targ | consequent <- consequents, targ <- targs]
     guard $ not (null validConsequentSubs)
-    let possibleCondSubs = concatMap (exploreSubstitutionTree (zip [0..] conditions) (zip [0..] hyps)) validConsequentSubs
+    let possibleCondSubs = concatMap (exploreSubstitutionTree (zip [0..] conditions) (zip [0..] hyps)) [[]]
     let bestVal = minimum $ map (length . fst . fst) possibleCondSubs
     let bestCondSubs = map snd $ filter ((==bestVal) . length . fst . fst) possibleCondSubs
 

@@ -29,7 +29,8 @@ data PrintingState = PS
   , getCounter :: Int
   }
 
--- Not 100% sure what's going on with this, need to check on it.
+-- Given an ExternalName and PrintingState, returns the PrintingState corresponding to the simple
+-- choice of that externalName being used, along with the first free InternalName (and returns the (inNm, exNm))
 getSuggestion' :: ExternalName -> State PrintingState (InternalName, ExternalName)
 getSuggestion' x = do
   PS m s n <- get
@@ -44,11 +45,14 @@ basicNames = [ExternalName (x : replicate n '\'') | n <- [0..], x <- alph]
 unusedName :: HashSet ExternalName -> ExternalName
 unusedName s = head $ filter (not . (`S.member` s)) basicNames
 
+-- Takes a PrintingState and returns a new PrintingState and (inNm, exNm) corresponding to choosing the first free ExternalName
 getFresh :: State PrintingState (InternalName, ExternalName)
 getFresh = do
   (PS _ u _) <- get
   getSuggestion' (unusedName u)
 
+-- Takes an ExternalName and a PrintingState. If the ExternalName has been used, finds a fresh one. If not, uses it.
+-- Returns the updated PrintingState along with the (inNm, exNm) used.
 getSuggestion :: ExternalName -> State PrintingState (InternalName, ExternalName)
 getSuggestion x = do
   (PS _ y _) <- get
@@ -58,7 +62,7 @@ getSuggestion x = do
 
 pprintBinderM :: String -> Maybe ExternalName -> Scoped -> State PrintingState String
 pprintBinderM b sug sc = do
-  (m, ExternalName sug') <- maybe getFresh getSuggestion sug
+  (m, ExternalName sug') <- maybe getFresh getSuggestion sug -- If there's an ExternalName, getsSuggestion. If it's a Nothing, getsFresh
   s <- pprintExprM $ instantiate (Free m) sc
   return $ b ++ sug' ++ ", " ++ s
 
@@ -78,12 +82,12 @@ pprintWithStringBetween a b str = do
 
 pprintExprM :: Expr -> State PrintingState String
 -- special patterns (all these must come first!)
-pprintExprM (Forall sug sc@(Sc (Implies (BApp (Pred "element_of") (B 0) dom) q))) = pprintBinderWithDomM "\8704" sug " \8712 " dom (Sc q)
-pprintExprM (Exists sug sc@(Sc (And (BApp (Pred "element_of") (B 0) dom) q))) = pprintBinderWithDomM "\8707" sug " \8712 " dom (Sc q)
-pprintExprM (Forall sug sc@(Sc (Implies (BApp (Pred "real_greater_than") (B 0) expr) q))) = pprintBinderWithDomM "\8704" sug " > " expr (Sc q)
-pprintExprM (Exists sug sc@(Sc (And (BApp (Pred "real_greater_than") (B 0) expr) q))) = pprintBinderWithDomM "\8707" sug " > " expr (Sc q)
-pprintExprM (Forall sug sc@(Sc (Implies (BApp (Pred "real_lesser_than") (B 0) expr) q))) = pprintBinderWithDomM "\8704" sug " < " expr (Sc q)
-pprintExprM (Exists sug sc@(Sc (And (BApp (Pred "real_lesser_than") (B 0) expr) q))) = pprintBinderWithDomM "\8707" sug " < " expr (Sc q)
+pprintExprM (Forall sug sc@(Sc (Implies (BApp "element_of" (B 0) dom) q))) = pprintBinderWithDomM "\8704" sug " \8712 " dom (Sc q)
+pprintExprM (Exists sug sc@(Sc (And (BApp "element_of" (B 0) dom) q))) = pprintBinderWithDomM "\8707" sug " \8712 " dom (Sc q)
+pprintExprM (Forall sug sc@(Sc (Implies (BApp "real_greater_than" (B 0) expr) q))) = pprintBinderWithDomM "\8704" sug " > " expr (Sc q)
+pprintExprM (Exists sug sc@(Sc (And (BApp "real_greater_than" (B 0) expr) q))) = pprintBinderWithDomM "\8707" sug " > " expr (Sc q)
+pprintExprM (Forall sug sc@(Sc (Implies (BApp "real_lesser_than" (B 0) expr) q))) = pprintBinderWithDomM "\8704" sug " < " expr (Sc q)
+pprintExprM (Exists sug sc@(Sc (And (BApp "real_lesser_than" (B 0) expr) q))) = pprintBinderWithDomM "\8707" sug " < " expr (Sc q)
 
 pprintExprM (Forall sug sc) = pprintBinderM "\8704" sug sc
 pprintExprM (Exists sug sc) = pprintBinderM "\8707" sug sc
@@ -98,16 +102,16 @@ pprintExprM (And a b) = do
   outB <- pprintExprM b
   return $ "(" ++ outA ++ " \8743 " ++ outB ++ ")"
 
-pprintExprM (BApp (Pred "element_of") a dom) = pprintWithStringBetween a dom " \8712 "
-pprintExprM (BApp (Pred "real_lesser_than") a dom) = pprintWithStringBetween a dom " < "
-pprintExprM (BApp (Pred "real_greater_than") a dom) = pprintWithStringBetween a dom " > "
-pprintExprM (TApp (Pred "function") f x y) = do
+pprintExprM (BApp "element_of" a dom) = pprintWithStringBetween a dom " \8712 "
+pprintExprM (BApp "real_lesser_than" a dom) = pprintWithStringBetween a dom " < "
+pprintExprM (BApp "real_greater_than" a dom) = pprintWithStringBetween a dom " > "
+pprintExprM (TApp "function" f x y) = do
   fOut <- pprintExprM f
   xOut <- pprintExprM x
   yOut <- pprintExprM y
   return $ fOut ++ ":" ++ xOut ++ "\8594" ++ yOut
 
-pprintExprM (Con (Obj "naturals")) = do return "\8469"
+pprintExprM (Con "naturals") = do return "\8469"
 
 -- general patterns
 pprintExprM t@(App _ _) = do
@@ -122,7 +126,7 @@ pprintExprM (Free x) = do
   return $ case htmlCode of
     Just something -> something
     _ -> name
-pprintExprM (Con s) = return $ strFromConStr s
+pprintExprM (Con s) = return s
 pprintExprM (Abs sug sc) = pprintBinderM "λ" sug sc
 pprintExprM (B _) = error "term not closed"
 
@@ -189,14 +193,18 @@ showQZoneWithNames showMap qZone@(Poset set rel) = let
   depsStr = dealWithEmpty . intercalate ", " $ map (\(q1, q2) -> getExternalName (showMap M.! qVarGetInternalName q1) ++ "<" ++ getExternalName (showMap M.! qVarGetInternalName q2)) rel
   in qZoneStr ++ "\n" ++ "Deps: " ++ depsStr ++ "\n"
 
-showQZoneWithNamesRaw ::QZone -> String
-showQZoneWithNamesRaw qZone@(Poset set rel) = let
+pprintQZoneWithNamesRaw ::QZone -> String
+pprintQZoneWithNamesRaw qZone@(Poset set rel) = let
   dealWithEmpty str = if str /= "" then str else "(empty)"
   qListToStr = dealWithEmpty . intercalate ", " . map (\qVar -> (if qVarGetQuantifier qVar == "Forall" then "\8704" else "\8707") ++ show (qVarGetInternalName qVar))
   qZoneStr = qListToStr $ orderQZone qZone
   depsStr = dealWithEmpty . intercalate ", " $ map (\(q1, q2) ->  show (qVarGetInternalName q1) ++ "<" ++ show (qVarGetInternalName q2)) rel
   in qZoneStr ++ "\n" ++ "Deps: " ++ depsStr ++ "\n"
 
+pprintQZoneDeps :: QZone -> String
+pprintQZoneDeps qZone@(Poset set rel) = let
+  PS showMap usedNames counter = getStartingPrintState qZone (PS mempty mempty 0)
+  in showQZoneWithNames showMap qZone
 
 pprintQBox :: QBox -> String
 pprintQBox (qZone, Box hyps targs) = let
@@ -217,7 +225,19 @@ rawPrintQBox (qZone, Box hyps targs) = let
   PS showMap usedNames counter = getStartingPrintState qZone (PS mempty mempty 0)
   in
     "---- QZone ----\n" ++
-    showQZoneWithNamesRaw qZone ++
+    pprintQZoneWithNamesRaw qZone ++
+    "---- Hyps ----\n" ++
+    dealWithEmpty ( intercalate "\n" (zipWith (\a b -> a ++ ": " ++ b) (map show [0..]) $ map show hyps) ) ++ "\n" ++
+    "---- Targs ----\n" ++
+    dealWithEmpty ( intercalate "\n" (zipWith (\a b -> a ++ ": " ++ b) (map show [0..]) $ map show targs) )
+
+pprintQBoxDeps :: QBox -> String
+pprintQBoxDeps (qZone, Box hyps targs) = let
+  dealWithEmpty str = if str /= "" then str else "(empty)"
+  PS showMap usedNames counter = getStartingPrintState qZone (PS mempty mempty 0)
+  in
+    "---- QZone ----\n" ++
+    showQZoneWithNames showMap qZone ++
     "---- Hyps ----\n" ++
     dealWithEmpty ( intercalate "\n" (zipWith (\a b -> a ++ ": " ++ b) (map show [0..]) $ map show hyps) ) ++ "\n" ++
     "---- Targs ----\n" ++

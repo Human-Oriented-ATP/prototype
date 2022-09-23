@@ -15,12 +15,11 @@ import HoleExpr
 import Debug.Trace
 import Parser
 
-
 -- Instantiate an existentially quantified variable, x, in the QZone with a given expression
 -- We need to ensure that none of the free variables in the expression must come after x
 -- We then need to update the dependencies so that all variables which had to come after x must now come after all free variables in the expression
 instantiateExistentialNoParse :: InternalName -> Expr -> Tableau -> Maybe Tableau
-instantiateExistentialNoParse inNm expr (Tableau qZone@(Poset set deps) boxes) = do
+instantiateExistentialNoParse inNm expr (Tableau qZone@(Poset set deps) rootBox) = do
     let relevantQVars = filter (\qVar -> qVarGetInternalName qVar == inNm) set
     guard $ not (null relevantQVars) -- Ensure the given InternalName is actually in the QZone
 
@@ -46,10 +45,7 @@ instantiateExistentialNoParse inNm expr (Tableau qZone@(Poset set deps) boxes) =
         instantiateInExpr (B i) = B i
         instantiateInExpr (Free i) = if i == inNm then expr else Free i
 
-        instantiateInBox :: Box -> Box
-        instantiateInBox (Box hyps targs) = Box (map instantiateInExpr hyps) (map instantiateInExpr targs)
-    let newBoxes = map instantiateInBox boxes
-    return $ Tableau newQZone newBoxes
+    return $ Tableau newQZone (fmap instantiateInExpr rootBox)
 
 
 -- Takes a string giving the show-ExternalName of the relevant variable, then a string specifying the term we want to instantiate it for

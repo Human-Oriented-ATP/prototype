@@ -7,34 +7,21 @@
 
 module BasicMoves where
 
-import Lib
-import TableauFoundation
-import Poset
 import Data.Maybe
 import Data.List
 import Control.Monad
+import Debug.Trace
+
+import Lib
+import TableauFoundation
+import Poset
 import PPrinting
 import HoleExpr
-import Debug.Trace
 
 -- <<< FOUNDATIONAL CODE >>>
 
--- Takes a QBox (a box with quantification info) and returns an updated QBox. Maybe because the move could fail
-type BoxMove = QBox -> Maybe QBox
 -- Takes a Tableau and returns an updated Tableau. Again, Maybe because the move could fail.
-type TableauMove = Tableau -> Maybe Tableau
-
--- Takes a BoxMove and performs it on the i-th box in a Tableau
-boxToTabMove :: BoxMove -> Int -> TableauMove
-boxToTabMove _ _ (Tableau qZone []) = Just $ Tableau qZone []
-boxToTabMove move i (Tableau qZone boxes)
-    | i < 0 || i >= length boxes = Nothing
-    | otherwise = do
-        let (as, box:bs) = splitAt i boxes
-        moveResult <- move (qZone, box)
-        let (newQZone, newBox) = moveResult
-        return $ Tableau newQZone (as ++ newBox : bs)
-
+type Move = Tableau -> Maybe Tableau
 
 -- Gets an unused InternalName from a QZone
 getNewInternalName :: QZone -> InternalName
@@ -54,122 +41,265 @@ getNewExternalNamePeel exNm (Poset set rel) = case exNm of
     _ -> Just $ findFreshExNm (mapMaybe qVarGetExternalName set)
 
 
--- Although it's inefficient to append to the end of a list, it's far more intuitive to add hypotheses to the end than the start.
--- This also avoids issues of hypotheses changing index mid-move.
--- Maybe because it makes Monadic chaining with updating easier.
-addHyp :: Hyp -> QBox -> Maybe QBox
-addHyp hyp (qZone, Box hyps targs) = Just (qZone, Box (hyps++[hyp]) targs)
 
-addTarg :: Targ -> QBox -> Maybe QBox
-addTarg targ (qZone, Box hyps targs) = Just (qZone, Box hyps (targs++[targ]))
+addHyp :: BoxNumber -> Expr -> Tableau -> Maybe Tableau
+addHyp boxNumber hyp (Tableau qZone rootBox) = do
+    boxZipper <- toBoxNumberFromRoot boxNumber rootBox
+    let newZipper = addHypToZipper hyp boxZipper
+    Just $ Tableau qZone (unzipBox newZipper)
 
-addHyps :: [Hyp] -> QBox -> Maybe QBox
-addHyps hypsToAdd (qZone, Box hyps targs) = Just (qZone, Box (hyps++hypsToAdd) targs)
+addPureTarg :: BoxNumber -> Expr -> Tableau -> Maybe Tableau
+addPureTarg boxNumber targ (Tableau qZone rootBox) = do
+    boxZipper <- toBoxNumberFromRoot boxNumber rootBox
+    let newZipper = addPureTargToZipper targ boxZipper
+    Just $ Tableau qZone (unzipBox newZipper)
 
-addTargs :: [Hyp] -> QBox -> Maybe QBox
-addTargs targsToAdd (qZone, Box hyps targs) = Just (qZone, Box hyps (targs++targsToAdd))
+addBoxTarg :: BoxNumber -> Box Expr -> Tableau -> Maybe Tableau
+addBoxTarg boxNumber boxTarg (Tableau qZone rootBox) = do
+    boxZipper <- toBoxNumberFromRoot boxNumber rootBox
+    let newZipper = addBoxTargToZipper boxTarg boxZipper
+    Just $ Tableau qZone (unzipBox newZipper)
+
+
+addHyps :: [(BoxNumber, Expr)] -> Tableau -> Maybe Tableau
+addHyps addSchedule (Tableau qZone rootBox) = do
+    (boxRoute, _) <- boxNumbersToDirections addSchedule
+    
+    let zippedBox = (rootBox, [])
+        followAndAddHyps :: [(BoxNumber, Expr)] -> BoxZipper Expr -> Maybe (BoxZipper Expr)
+        followAndAddHyps [] currentZipper = Just currentZipper
+        followAndAddHyps ((direction, hyp):rest) currentZipper = do
+            newZipper <- toBoxNumberFromZipper direction currentZipper
+            Just $ addHypToZipper hyp newZipper
+    
+    addedHypsZipper <- followAndAddHyps boxRoute zippedBox
+    let newRootBox = unzipBox addedHypsZipper
+    Just $ Tableau qZone newRootBox
+
+
+addPureTargs :: [(BoxNumber, Expr)] -> Tableau -> Maybe Tableau
+addPureTargs addSchedule (Tableau qZone rootBox) = do
+    (boxRoute, _) <- boxNumbersToDirections addSchedule
+    
+    let zippedBox = (rootBox, [])
+        followAndAddPureTargs :: [(BoxNumber, Expr)] -> BoxZipper Expr -> Maybe (BoxZipper Expr)
+        followAndAddPureTargs [] currentZipper = Just currentZipper
+        followAndAddPureTargs ((direction, pureTarg):rest) currentZipper = do
+            newZipper <- toBoxNumberFromZipper direction currentZipper
+            Just $ addPureTargToZipper pureTarg newZipper
+    
+    addTargsZipper <- followAndAddPureTargs boxRoute zippedBox
+    let newRootBox = unzipBox addTargsZipper
+    Just $ Tableau qZone newRootBox
+
+addBoxTargs :: [(BoxNumber, Box Expr)] -> Tableau -> Maybe Tableau
+addBoxTargs addSchedule (Tableau qZone rootBox) = do
+    (boxRoute, _) <- boxNumbersToDirections addSchedule
+    
+    let zippedBox = (rootBox, [])
+        followAndAddBoxTargs :: [(BoxNumber, Box Expr)] -> BoxZipper Expr -> Maybe (BoxZipper Expr)
+        followAndAddBoxTargs [] currentZipper = Just currentZipper
+        followAndAddBoxTargs ((direction, boxTarg):rest) currentZipper = do
+            newZipper <- toBoxNumberFromZipper direction currentZipper
+            Just $ addBoxTargToZipper boxTarg newZipper
+    
+    addTargsZipper <- followAndAddBoxTargs boxRoute zippedBox
+    let newRootBox = unzipBox addTargsZipper
+    Just $ Tableau qZone newRootBox
+
+
 
 -- Removes hyps/targs. Should out-of-bounds index give unchanged or Nothing? Not sure yet.
 -- IMPROVEMENT - think about whether out-of-bounds index should return unchanged or Nothing
-removeHyp :: Int -> QBox -> Maybe QBox
-removeHyp i (qZone, Box hyps targs)
-    | i < 0 || i >= length hyps = Nothing
-    | otherwise =
-        let (as, (hyp:bs)) = splitAt i hyps
-            updatedHyps = as++bs
-        in Just (qZone, Box updatedHyps targs)
+removeHyp :: BoxNumber -> Int -> Tableau -> Maybe Tableau
+removeHyp boxNumber hypInd (Tableau qZone boxes) = do
+    boxZipper <- toBoxNumberFromRoot boxNumber boxes
+    newBoxZipper <- removeHypFromZipper hypInd boxZipper
+    Just (Tableau qZone (unzipBox newBoxZipper))
 
-removeTarg :: Int -> QBox -> Maybe QBox
-removeTarg i (qZone, Box hyps targs)
-    | i < 0 || i >= length targs = Nothing
-    | otherwise =
-        let (as, (targ:bs)) = splitAt i targs
-            updatedTargs = as++bs
-        in Just (qZone, Box hyps updatedTargs)
+removeTarg :: BoxNumber -> Int -> Tableau -> Maybe Tableau
+removeTarg boxNumber targInd (Tableau qZone boxes) = do
+    boxZipper <- toBoxNumberFromRoot boxNumber boxes
+    newBoxZipper <- removeTargFromZipper targInd boxZipper
+    Just (Tableau qZone (unzipBox newBoxZipper))
+
+removeAllTargs :: BoxNumber -> Tableau -> Maybe Tableau
+removeAllTargs boxNumber (Tableau qZone boxes) = do
+    (Box hyps targs, crumbs) <- toBoxNumberFromRoot boxNumber boxes
+    Just (Tableau qZone (unzipBox (Box hyps [], crumbs)))
 
 -- Slightly more time-efficient solutions exist, but not sure the constant overhead is worth it?
-removeHyps :: [Int] -> QBox -> Maybe QBox
+{-
+removeHyps :: BoxNumber -> [Int] -> Tableau -> Maybe Tableau
 removeHyps [] qBox = Just qBox
 removeHyps inds qBox@(qZone, Box hyps targs)
     | any (\i -> i < 0 || i >= length hyps) inds = Nothing
     | otherwise = removeHypsNoSort 0 (sort inds) qBox where
-        removeHypsNoSort :: Int -> [Int] -> QBox -> Maybe QBox
+        removeHypsNoSort :: BoxNumber -> Int -> [Int] -> Tableau -> Maybe Tableau
         removeHypsNoSort counter inds qBox = do
             let (ind:rest) = inds
             newBox <- removeHyp (ind-counter) qBox
             removeHypsNoSort (counter+1) rest newBox
 
-removeTargs :: [Int] -> QBox -> Maybe QBox
+removeTargs :: BoxNumber -> [Int] -> Tableau -> Maybe Tableau
 removeTargs [] qBox = Just qBox
 removeTargs inds qBox@(qZone, Box hyps targs)
     | any (\i -> i < 0 || i >= length targs) inds = Nothing
     | otherwise = removeTargsNoSort 0 (sort inds) qBox where
-        removeTargsNoSort :: Int -> [Int] -> QBox -> Maybe QBox
+        removeTargsNoSort :: BoxNumber -> Int -> [Int] -> Tableau -> Maybe Tableau
         removeTargsNoSort counter [ind] qBox = removeTarg (ind-counter) qBox
         removeTargsNoSort counter inds qBox = do
             let (ind:rest) = inds
             newBox <- removeTarg (ind-counter) qBox
             removeTargsNoSort (counter+1) rest newBox
+-}
 
--- Updates the i-th hypothesis. Maybe because it might not exist.
-updateHyp :: Int -> Hyp -> QBox -> Maybe QBox
-updateHyp i newHyp (qZone, Box hyps targs)
-    | i < 0 || i >= length hyps = Nothing
-    | otherwise = Just (qZone, Box newHyps targs) where
-    newHyps = let (as, hyp:bs) = splitAt i hyps in (as ++ newHyp : bs)
+removeFromListMaybe :: [a] -> Int -> Maybe [a]
+removeFromListMaybe l i
+    | i < 0 || i <= length l = Nothing
+    | otherwise = let
+        (as, _:bs) = splitAt i l
+        in Just $ as++bs
 
-updateTarg :: Int -> Targ -> QBox -> Maybe QBox
-updateTarg i newTarg (qZone, Box hyps targs)
-    | i < 0 || i >= length targs = Nothing
-    | otherwise = Just (qZone, Box hyps newTargs) where
-    newTargs = let (as, targ:bs) = splitAt i targs in (as ++ newTarg : bs)
+removeHyps :: [(BoxNumber, Int)] -> Tableau -> Maybe Tableau
+removeHyps removeSchedule tab@(Tableau qZone rootBox) = do
+    (orderedRemoveSchedule, _) <- boxNumbersToDirectionsWithInt removeSchedule
+    let
+        followAndRemoveHyps :: [(BoxNumber, Int)] -> BoxZipper Expr -> Maybe (BoxZipper Expr)
+        followAndRemoveHyps [] boxZipper = Just boxZipper
+        followAndRemoveHyps ((boxNumber, hypInd):rest) boxZipper = do
+            (Box hyps targs, crumbs) <- toBoxNumberFromZipper boxNumber boxZipper
+            newHyps <- removeFromListMaybe hyps hypInd
+            followAndRemoveHyps rest (Box newHyps targs, crumbs)
+    finalZipper <- followAndRemoveHyps orderedRemoveSchedule (rootBox, [])
+    Just $ (Tableau qZone (unzipBox finalZipper))
 
--- Gets the i-th hypothesis. Maybe because it might not exist
-getHyp :: Int -> [Hyp] -> Maybe Hyp
-getHyp i hyps
-    | i < 0 || i >= length hyps = Nothing
-    | otherwise = Just $ hyps!!i
+removePureTargs :: [(BoxNumber, Int)] -> Tableau -> Maybe Tableau
+removePureTargs removeSchedule tab@(Tableau qZone rootBox) = do
+    (orderedRemoveSchedule, _) <- boxNumbersToDirectionsWithInt removeSchedule
+    let
+        followAndRemoveTargs :: [(BoxNumber, Int)] -> BoxZipper Expr -> Maybe (BoxZipper Expr)
+        followAndRemoveTargs [] boxZipper = Just boxZipper
+        followAndRemoveTargs ((boxNumber, targInd):rest) boxZipper = do
+            (Box hyps targs, crumbs) <- toBoxNumberFromZipper boxNumber boxZipper
+            PureTarg targ <- getFromListMaybe targs targInd
+            newTargs <- removeFromListMaybe targs targInd
+            followAndRemoveTargs rest (Box hyps newTargs, crumbs)
+    finalZipper <- followAndRemoveTargs orderedRemoveSchedule (rootBox, [])
+    Just $ (Tableau qZone (unzipBox finalZipper))
 
-getTarg :: Int -> [Targ] -> Maybe Targ
-getTarg i targs
-    | i < 0 || i >= length targs = Nothing
-    | otherwise = Just $ targs!!i
+removeBoxTargs :: [(BoxNumber, Int)] -> Tableau -> Maybe Tableau
+removeBoxTargs removeSchedule tab@(Tableau qZone rootBox) = do
+    (orderedRemoveSchedule, _) <- boxNumbersToDirectionsWithInt removeSchedule
+    let
+        followAndRemoveTargs :: [(BoxNumber, Int)] -> BoxZipper Expr -> Maybe (BoxZipper Expr)
+        followAndRemoveTargs [] boxZipper = Just boxZipper
+        followAndRemoveTargs ((boxNumber, targInd):rest) boxZipper = do
+            (Box hyps targs, crumbs) <- toBoxNumberFromZipper boxNumber boxZipper
+            BoxTarg targ <- getFromListMaybe targs targInd
+            newTargs <- removeFromListMaybe targs targInd
+            followAndRemoveTargs rest (Box hyps newTargs, crumbs)
+    finalZipper <- followAndRemoveTargs orderedRemoveSchedule (rootBox, [])
+    Just $ (Tableau qZone (unzipBox finalZipper))
 
 
--- Gets the i-th box from a list of boxes, returning a QBox (qZone given by that of Tableau). Maybe beacuse it might not exist
-getBox :: Int -> Tableau -> Maybe QBox
-getBox i tab@(Tableau qZone boxes)
-    | i < 0 || i >= length boxes = Nothing
-    | otherwise = Just $ (qZone, boxes!!i)
 
--- Adds a box to a Tableau. We presume that it's correctly quantified by the Tableau's qZone
-addBox :: Box -> Tableau -> Maybe Tableau
-addBox box tab@(Tableau qZone boxes) = Just $ (Tableau qZone (boxes++[box]))
+updateHyp :: BoxNumber -> Int -> Expr -> Tableau -> Maybe Tableau
+updateHyp boxNumber hypInd newHyp (Tableau qZone rootBox) = do
+    boxZipper <- toBoxNumberFromRoot boxNumber rootBox
+    newBoxZipper <- updateHypInZipper hypInd newHyp boxZipper
+    let newBox = unzipBox newBoxZipper
+    Just (Tableau qZone newBox)
 
--- Removes a box from a Tableau. Same issue as removing hyp/targ - should this return nothing if out-of-bounds?
-removeBox :: Int -> Tableau -> Maybe Tableau
-removeBox boxInd tab@(Tableau qZone boxes)
-    | boxInd < 0 || boxInd >= length boxes = Just tab
-    | otherwise =
-        let (as, (box:bs)) = splitAt boxInd boxes
-            updatedBoxes = as ++ bs
-        in Just $ (Tableau qZone updatedBoxes)
+updatePureTarg :: BoxNumber -> Int -> Expr -> Tableau -> Maybe Tableau
+updatePureTarg boxNumber targInd newTarg (Tableau qZone rootBox) = do
+    boxZipper <- toBoxNumberFromRoot boxNumber rootBox
+    newBoxZipper <- updatePureTargInZipper targInd newTarg boxZipper
+    let newBox = unzipBox newBoxZipper
+    Just (Tableau qZone newBox)
 
--- Updated a box in a Tableau.
-updateBox :: Int -> Box -> Tableau -> Maybe Tableau
-updateBox boxInd updatedBox tab@(Tableau qZone boxes)
-    | boxInd < 0 || boxInd >= length boxes = Nothing
-    | otherwise =
-        let (as, (box:bs)) = splitAt boxInd boxes
-            updatedBoxes = as ++ (updatedBox:bs)
-        in Just $ (Tableau qZone updatedBoxes)
+updateBoxTarg :: BoxNumber -> Int -> Box Expr -> Tableau -> Maybe Tableau
+updateBoxTarg boxNumber targInd newTarg (Tableau qZone rootBox) = do
+    boxZipper <- toBoxNumberFromRoot boxNumber rootBox
+    newBoxZipper <- updateBoxTargInZipper targInd newTarg boxZipper
+    let newBox = unzipBox newBoxZipper
+    Just (Tableau qZone newBox)
 
--- Clear empty boxes
-clearEmptyBoxes :: Tableau -> Maybe Tableau
-clearEmptyBoxes tab@(Tableau qZone boxes) =
-    let filteredBoxes = filter (\(Box hyps targs) -> targs /= []) boxes
-    in Just $ (Tableau qZone filteredBoxes)
 
+getFromListMaybe :: [a] -> Int -> Maybe a
+getFromListMaybe l i
+    | i < 0 || i >= length l = Nothing
+    | otherwise = Just $ l!!i
+
+getHyp :: BoxNumber -> Int -> Tableau -> Maybe Expr
+getHyp boxNumber hypInd (Tableau qZone rootBox) = do
+    boxZipper <- toBoxNumberFromRoot boxNumber rootBox
+    getHypInZipper hypInd boxZipper
+
+getPureTarg :: BoxNumber -> Int -> Tableau -> Maybe Expr
+getPureTarg boxNumber targInd (Tableau qZone rootBox) = do
+    boxZipper <- toBoxNumberFromRoot boxNumber rootBox
+    getPureTargInZipper targInd boxZipper
+
+getBoxTarg :: BoxNumber -> Int -> Tableau -> Maybe (Box Expr)
+getBoxTarg boxNumber targInd (Tableau qZone rootBox) = do
+    boxZipper <- toBoxNumberFromRoot boxNumber rootBox
+    getBoxTargInZipper targInd boxZipper
+
+-- Efficiently gets the list of hyps. Data is stored with each hyp, and this is preserved.
+-- Also returns the deepest BoxNumber from the boxes
+getHypsWithData :: [((BoxNumber, Int), a)] -> Tableau -> Maybe ([(Expr, a)], BoxNumber)
+getHypsWithData getSchedule tab@(Tableau qZone rootBox) = do
+    let boxNumbersWithData = map (\((boxNumber, hypInd), dat) -> (boxNumber, (hypInd, dat))) getSchedule
+    (directions, deepestBox) <- boxNumbersToDirections boxNumbersWithData
+    let
+        followAndGetHyps :: [(BoxNumber, (Int, a))] -> BoxZipper Expr -> Maybe [(Expr, a)]
+        followAndGetHyps [] _ = Just []
+        followAndGetHyps ((boxNumber, (hypInd, dat)):rest) boxZipper = do
+            newBoxZipper <- toBoxNumberFromZipper boxNumber boxZipper
+            hyp <- getHypInZipper hypInd newBoxZipper
+            otherHyps <- followAndGetHyps rest newBoxZipper
+            Just ((hyp, dat):otherHyps)
+    extractedHyps <- followAndGetHyps boxNumbersWithData (rootBox, [])
+    Just (extractedHyps, deepestBox)
+
+-- Returns the shallowest BoxNumber from the boxes. Reason being that shallower is worse for boxes, whereas deeper is worse for hyps.
+getTargsWithData :: [((BoxNumber, Int), a)] -> Tableau -> Maybe ([(Expr, a)], BoxNumber)
+getTargsWithData getSchedule tab@(Tableau qZone rootBox) = do
+    let boxNumbersWithData = map (\((boxNumber, targInd), dat) -> (boxNumber, (targInd, dat))) getSchedule
+    (directions, shallowestBox) <- boxNumbersToDirectionsFlipped boxNumbersWithData
+    let
+        followAndGetTargs :: [(BoxNumber, (Int, a))] -> BoxZipper Expr -> Maybe [(Expr, a)]
+        followAndGetTargs [] _ = Just []
+        followAndGetTargs ((boxNumber, (targInd, dat)):rest) boxZipper = do
+            newBoxZipper <- toBoxNumberFromZipper boxNumber boxZipper
+            targ <- getPureTargInZipper targInd newBoxZipper
+            otherTargs <- followAndGetTargs rest newBoxZipper
+            Just ((targ, dat):otherTargs)
+    extractedTargs <- followAndGetTargs boxNumbersWithData (rootBox, [])
+    Just (extractedTargs, shallowestBox)
+
+-- Checks if the list of expressions provided exist as hypothess in the tableau
+-- in such a way that they can be used together. If not, returns Nothing.
+-- If so, returns the deepest BoxNumber's in which the hypotheses lies (there could be many, depending on the route taken)
+checkHypsExistCompatibly :: [Expr] -> Tableau -> [BoxNumber]
+checkHypsExistCompatibly hypsToFind tab@(Tableau qZone rootBox@(Box rootHyps rootTargs)) = let
+    exploreBranch :: ((BoxNumber, BoxZipper Expr), [Expr]) -> [((BoxNumber, BoxZipper Expr), [Expr])]
+    exploreBranch ((boxNumber, boxZipper@(Box hyps targs, crumbs)), hypsToFind') = let
+        newBranches = mapMaybe (\targInd -> case toBoxNumberFromZipper [targInd] boxZipper of
+            Just newBoxZipper -> Just (boxNumber++[targInd], newBoxZipper)
+            Nothing -> Nothing
+            ) [0..length targs-1]
+        in map (\a@(_, (Box hyps targs, _)) -> (a, filter (`notElem` hyps) hypsToFind')) newBranches
+    
+    exploreBranches :: ((BoxNumber, BoxZipper Expr), [Expr]) -> [BoxNumber]
+    exploreBranches ((boxNumber, _), []) = [boxNumber]
+    exploreBranches a@((boxNumber, boxZipper), _) = concatMap (exploreBranches) (exploreBranch a)
+
+    remainingHyps = filter (`notElem` rootHyps) hypsToFind
+    rootZipper = (rootBox, [])
+
+    in exploreBranches (([], rootZipper), remainingHyps)
 
 
 -- <<< NON-LIB MOVES >>>
@@ -178,9 +308,9 @@ clearEmptyBoxes tab@(Tableau qZone boxes) =
 
 -- Peels universal target
 -- targ i : forall x, P(x)
-peelUniversalTargBox :: Int -> BoxMove
-peelUniversalTargBox i qBox@(qZone@(Poset set deps), Box hyps targs) = do
-    expr@(Forall exNm sc) <- getTarg i targs
+peelUniversalTarg :: BoxNumber -> Int -> Move
+peelUniversalTarg boxNumber targInd tab@(Tableau qZone@(Poset set rel) rootBox) = do
+    expr@(Forall exNm sc) <- getPureTarg boxNumber targInd tab
     let peeledName = getNewInternalName qZone
     let peeledExternalName = getNewExternalNamePeel exNm qZone
     let peeledVariable = QVar "Forall" peeledExternalName peeledName
@@ -188,79 +318,81 @@ peelUniversalTargBox i qBox@(qZone@(Poset set deps), Box hyps targs) = do
     let freeVars = map (\inNm -> head $ filter (\q -> qVarGetInternalName q == inNm) set) $ getFreeVars expr
     let newDeps = [(y, peeledVariable) | y <- freeVars, qVarGetQuantifier y == "Exists"] -- We only need to add dependencies relating to exists, because dependencies between forall's is given by this
     newQZone <- addRels (addSetMember qZone peeledVariable) newDeps
-    (_, newBox) <- updateTarg i (instantiate (Free peeledName) sc) qBox
-    return $ (newQZone, newBox)
+    (Tableau _ newRootBox) <- updatePureTarg boxNumber targInd (instantiate (Free peeledName) sc) tab
+    return $ Tableau newQZone newRootBox
 
 -- Peels existential target, creating a metavariable
 -- targ i : exists x, P(x)
-peelExistentialTargBox :: Int -> BoxMove
-peelExistentialTargBox i qBox@(qZone@(Poset set deps), Box hyps targs) = do
-    expr@(Exists exNm sc) <- getTarg i targs
-    let freeVars = map (\inNm -> head $ filter (\q -> qVarGetInternalName q == inNm) set) $ getFreeVars expr
+peelExistentialTarg :: BoxNumber -> Int -> Move
+peelExistentialTarg boxNumber targInd tab@(Tableau qZone@(Poset set rel) rootBox) = do
+    expr@(Exists exNm sc) <- getPureTarg boxNumber targInd tab
     let peeledName = getNewInternalName qZone
     let peeledExternalName = getNewExternalNamePeel exNm qZone
     let peeledVariable = QVar "Exists" peeledExternalName peeledName
-    let newDeps = [(y, peeledVariable) | y <- freeVars, qVarGetQuantifier y == "Forall"]
+    
+    let freeVars = map (\inNm -> head $ filter (\q -> qVarGetInternalName q == inNm) set) $ getFreeVars expr
+    let newDeps = [(y, peeledVariable) | y <- freeVars, qVarGetQuantifier y == "Forall"] -- We only need to add dependencies relating to exists, because dependencies between forall's is given by this
     newQZone <- addRels (addSetMember qZone peeledVariable) newDeps
-    (qZone, newBox) <- updateTarg i (instantiate (Free peeledName) sc) qBox
-    return $ (newQZone, newBox)
+    (Tableau _ newRootBox) <- updatePureTarg boxNumber targInd (instantiate (Free peeledName) sc) tab
+    return $ Tableau newQZone newRootBox
 
 -- Peels existential hypothesis
 -- hyp i : exists x, P(x)
 -- IMPROVEMENT - currently find new external name to prevent confusing outputs after a single move, but maybe this should happen at the print stage? Think about this.
-peelExistentialHypBox :: Int -> BoxMove
-peelExistentialHypBox i qBox@(qZone@(Poset set deps), Box hyps targs) = do
-    expr@(Exists exNm sc) <- getHyp i hyps
-    let freeVars = map (\inNm -> head $ filter (\q -> qVarGetInternalName q == inNm) set) $ getFreeVars expr
+peelExistentialHyp :: BoxNumber -> Int -> Move
+peelExistentialHyp boxNumber hypInd tab@(Tableau qZone@(Poset set rel) rootBox) = do
+    expr@(Exists exNm sc) <- getHyp boxNumber hypInd tab
     let peeledName = getNewInternalName qZone
     let peeledExternalName = getNewExternalNamePeel exNm qZone
     let peeledVariable = QVar "Forall" peeledExternalName peeledName
-    let newDeps = [(y, peeledVariable) | y <- freeVars, qVarGetQuantifier y == "Exists"]
+    
+    let freeVars = map (\inNm -> head $ filter (\q -> qVarGetInternalName q == inNm) set) $ getFreeVars expr
+    let newDeps = [(y, peeledVariable) | y <- freeVars, qVarGetQuantifier y == "Exists"] -- We only need to add dependencies relating to exists, because dependencies between forall's is given by this
     newQZone <- addRels (addSetMember qZone peeledVariable) newDeps
-    (qZone, newBox) <- updateHyp i (instantiate (Free peeledName) sc) qBox
-    return $ (newQZone, newBox)
+    (Tableau _ newRootBox) <- updateHyp boxNumber hypInd (instantiate (Free peeledName) sc) tab
+    return $ Tableau newQZone newRootBox
 
 -- Peels universal hypothesis, creating a metavariable
 -- This move keeps the original hypothesis, because it's dangerous otherwise
 -- hyp i : forall x, P(x)
-peelUniversalHypBox :: Int -> BoxMove
-peelUniversalHypBox i qBox@(qZone@(Poset set deps), Box hyps targs) = do
-    expr@(Forall exNm sc) <- getHyp i hyps
-    let freeVars = map (\inNm -> head $ filter (\q -> qVarGetInternalName q == inNm) set) $ getFreeVars expr
+peelUniversalHyp :: BoxNumber -> Int -> Move
+peelUniversalHyp boxNumber hypInd tab@(Tableau qZone@(Poset set rel) rootBox) = do
+    expr@(Forall exNm sc) <- getHyp boxNumber hypInd tab
     let peeledName = getNewInternalName qZone
     let peeledExternalName = getNewExternalNamePeel exNm qZone
     let peeledVariable = QVar "Exists" peeledExternalName peeledName
-    let newDeps = [(y, peeledVariable) | y <- freeVars, qVarGetQuantifier y == "Forall"]
+    
+    let freeVars = map (\inNm -> head $ filter (\q -> qVarGetInternalName q == inNm) set) $ getFreeVars expr
+    let newDeps = [(y, peeledVariable) | y <- freeVars, qVarGetQuantifier y == "Forall"] -- We only need to add dependencies relating to exists, because dependencies between forall's is given by this
     newQZone <- addRels (addSetMember qZone peeledVariable) newDeps
-    (qZone, newBox) <- addHyp (instantiate (Free peeledName) sc) qBox
-    return $ (newQZone, newBox)
+    (Tableau _ newRootBox) <- addHyp boxNumber (instantiate (Free peeledName) sc) tab
+    return $ Tableau newQZone newRootBox
 
 
 -- TIDYING
 
 -- Tidies implication in target
 -- targ i : P \implies Q
-tidyImplInTarg :: Int -> Int -> TableauMove
-tidyImplInTarg i boxInd tab@(Tableau qZone boxes) = do
-    qBox@(qZone, Box hyps targs) <- getBox boxInd tab
-    Implies p q <- getTarg i targs
-    let newHyps = hyps ++ [p]
-    let newTargs = [q]
-    let newBox = Box newHyps newTargs
-    (_, remainingBox) <- removeTarg i qBox
-    updateBox boxInd newBox tab >>= addBox remainingBox >>= clearEmptyBoxes
+tidyImplInTarg :: BoxNumber -> Int -> Move
+tidyImplInTarg boxNumber targInd tab@(Tableau qZone rootBox) = do
+    Box hyps targs <- getBox boxNumber rootBox
+    PureTarg (Implies p q) <- getFromListMaybe targs targInd
+    if length targs == 1 then
+        addHyp boxNumber p tab >>= updatePureTarg boxNumber targInd q
+    else
+        removeTarg boxNumber targInd tab >>= addBoxTarg boxNumber (Box [p] [PureTarg q])
 
 -- Splits and hypotheses up
 -- hyp i : P ^ Q
-tidyAndInHypBox :: Int -> BoxMove
-tidyAndInHypBox i qBox@(qZone, Box hyps targ) = do
-    And p q <- getHyp i hyps
-    updateHyp i p qBox >>= addHyp q
+tidyAndInHyp :: BoxNumber -> Int -> Move
+tidyAndInHyp boxNumber hypInd tab@(Tableau qZone rootBox) = do
+    And p q <- getHyp boxNumber hypInd tab
+    updateHyp boxNumber hypInd p tab >>= addHyp boxNumber q
 
-tidyAndInTargBox :: Int -> BoxMove
-tidyAndInTargBox i qBox@(qZone, Box hyps targs) = do
-    And p q <- getTarg i targs
-    updateTarg i p qBox >>= addTarg q
+tidyAndInTarg :: BoxNumber -> Int -> Move
+tidyAndInTarg boxNumber targInd tab@(Tableau qZone rootBox) = do
+    And p q <- getPureTarg boxNumber targInd tab
+    updatePureTarg boxNumber targInd p tab >>= addPureTarg boxNumber q
 
 
 -- MODUS PONENS AND BACKWARDS REASONING
@@ -269,39 +401,46 @@ tidyAndInTargBox i qBox@(qZone, Box hyps targs) = do
 -- hyp i : forall x, P(x) \implies Q(x)
 -- hyp j : P(y)
 -- conclude : Q(y)
-modusPonensBox :: Int -> Int -> BoxMove
-modusPonensBox i j qBox@(qZone, Box hyps targs) = do
-    expr@(Forall exNm (Sc (Implies px qx))) <- getHyp i hyps
+modusPonens :: (BoxNumber, Int) -> (BoxNumber, Int) -> Move
+modusPonens (boxNumber1, hypInd1) (boxNumber2, hypInd2) tab@(Tableau qZone rootBox) = do
+    guard $ isPrefix boxNumber1 boxNumber2 || isPrefix boxNumber2 boxNumber1
+    let deepestBoxNumber = if isPrefix boxNumber1 boxNumber2 then boxNumber2 else boxNumber1
+
+    expr@(Forall exNm (Sc (Implies px qx))) <- getHyp boxNumber1 hypInd1 tab
     let freeVars = getFreeVars expr
-    py <- getHyp j hyps
+    py <- getHyp boxNumber2 hypInd2 tab
     let freeVars'@(freeVar':rest') = getFreeVars py
-    let toInstantiate' = filter (`notElem` freeVars) freeVars' -- Finds the freeVars in p', but not expr
+        toInstantiate' = filter (`notElem` freeVars) freeVars' -- Finds the freeVars in p', but not expr
     guard $ not (null toInstantiate')
     guard $ (expr /= py)
     let successes = filter (\var -> instantiate (Free var) (Sc px) == py) toInstantiate'
     guard $ length successes == 1
     let newHyp = instantiate (Free . head $ successes) (Sc qx)
-    addHyp newHyp qBox
+    
+    addHyp deepestBoxNumber newHyp tab
 
-rawModusPonensBox :: Int -> Int -> BoxMove
-rawModusPonensBox i j qBox@(qZone, Box hyps targs) = do
-    expr@(Implies p q) <- getHyp i hyps
-    p' <- getHyp j hyps
+rawModusPonens :: (BoxNumber, Int) -> (BoxNumber, Int) -> Move
+rawModusPonens (boxNumber1, hypInd1) (boxNumber2, hypInd2) tab@(Tableau qZone rootBox) = do
+    guard $ isPrefix boxNumber1 boxNumber2 || isPrefix boxNumber2 boxNumber1
+    let deepestBoxNumber = if isPrefix boxNumber1 boxNumber2 then boxNumber2 else boxNumber1
+    expr@(Implies p q) <- getHyp boxNumber1 hypInd1 tab
+    p' <- getHyp boxNumber2 hypInd2 tab
     guard $ p' == p
-    addHyp q qBox
-
+    addHyp deepestBoxNumber q tab
 
 
 -- Performs backwards reasoning on hypothesis i and target j
 -- hyp i  : P \implies Q
 -- targ j : Q
 -- replace targ j with P
-backwardsReasoningHypBox :: Int -> Int -> BoxMove
-backwardsReasoningHypBox i j qBox@(qZone, Box hyps targs) = do
-    expr@(Implies p q) <- getHyp i hyps
-    q' <- getTarg j targs
+backwardsReasoningHyp :: (BoxNumber, Int) -> (BoxNumber, Int) -> Move
+backwardsReasoningHyp (boxNumber1, hypInd) (boxNumber2, targInd) tab@(Tableau qZone rootBox) = do
+    guard $ isPrefix boxNumber1 boxNumber2
+
+    expr@(Implies p q) <- getHyp boxNumber1 hypInd tab
+    q' <- getPureTarg boxNumber2 targInd tab
     guard $ q == q'
-    updateTarg j p qBox
+    updatePureTarg boxNumber2 targInd p tab
 
 
 -- <<< OTHER >>>
@@ -309,51 +448,48 @@ backwardsReasoningHypBox i j qBox@(qZone, Box hyps targs) = do
 -- hyp i : P \implies Q
 -- add a new box with only target P and all hypotheses except i
 -- replace hyp i in this box with Q
-commitToHypothesis :: Int -> Int -> TableauMove
-commitToHypothesis i boxInd tab@(Tableau qZone boxes) = do
-    qBox@(_, Box hyps targs) <- getBox boxInd tab
-    expr@(Implies p q) <- getHyp i hyps
-    (qZone, Box deducePHyps _) <- removeHyp i qBox
-    let deducePBox = (Box deducePHyps [p])
-    (_, useQBox) <- updateHyp i q qBox
-    newTab <- updateBox boxInd useQBox tab
-    addBox deducePBox newTab
+commitToHypothesis :: BoxNumber -> Int -> Move
+commitToHypothesis boxNumber hypInd tab@(Tableau qZone rootBox) = do
+    Implies p q <- getHyp boxNumber hypInd tab
+    Box hyps targs <- getBox boxNumber rootBox
+    let targsWithQ = Box [q] targs
+    removeAllTargs boxNumber tab >>= addPureTarg boxNumber p >>= addBoxTarg boxNumber targsWithQ
 
 
-
+{-
 -- <<< QUALITY OF LIFE MOVES (IMPLEMENTED QUESTIONABLY) >>>
 
 -- Repeat a hyp-index receiving move on a box as many times as possible
-repeatAsMuchAsPossibleOnHyps :: (Int -> BoxMove) -> BoxMove
+repeatAsMuchAsPossibleOnHyps :: (Int -> Move) -> Move
 repeatAsMuchAsPossibleOnHyps move qBox@(qZone, box@(Box hyps targs)) =
     let applyOnce = mapMaybe (\i -> move i qBox) [0..(length hyps) - 1]
     in if null applyOnce then Just qBox else repeatAsMuchAsPossibleOnHyps move $ head applyOnce
 
-repeatAsMuchAsPossibleOnTargs :: (Int -> BoxMove) -> BoxMove
+repeatAsMuchAsPossibleOnTargs :: (Int -> Move) -> Move
 repeatAsMuchAsPossibleOnTargs move qBox@(qZone, box@(Box hyps targs)) =
     let applyOnce = mapMaybe (\i -> move i qBox) [0..(length targs) - 1]
     in if null applyOnce then Just qBox else repeatAsMuchAsPossibleOnTargs move $ head applyOnce
 
--- Repeats a BoxMove until the result is the same twice in a row or we can't perform the move again
-repeatAsMuchAsPossible :: BoxMove -> BoxMove
+-- Repeats a Move until the result is the same twice in a row or we can't perform the move again
+repeatAsMuchAsPossible :: Move -> Move
 repeatAsMuchAsPossible move qBox = repeatUntilFP move (Just (Poset [] [], Box [] [])) (Just qBox)
     where
-        repeatUntilFP :: BoxMove -> Maybe QBox -> Maybe QBox -> Maybe QBox
+        repeatUntilFP :: Move -> Maybe (Box Expr) -> Maybe (Box Expr) -> Maybe (Box Expr)
         repeatUntilFP move' last current =
             if last == current then current else case current of
                 Just something -> repeatUntilFP move' current (move' something)
                 _ -> last
 
-tidySweep :: BoxMove
+tidySweep :: Move
 tidySweep qBox = (repeatAsMuchAsPossibleOnTargs peelUniversalTargBox) qBox
     >>= (repeatAsMuchAsPossibleOnHyps peelExistentialHypBox)
     >>= (repeatAsMuchAsPossibleOnTargs tidyAndInTargBox)
     >>= (repeatAsMuchAsPossibleOnHyps tidyAndInHypBox)
 
-tidyEverythingBox :: BoxMove
+tidyEverythingBox :: Move
 tidyEverythingBox = repeatAsMuchAsPossible tidySweep
 
-tidyTabImplOnce :: TableauMove
+tidyTabImplOnce :: Move
 tidyTabImplOnce tab@(Tableau qZone boxes) = let
     boxAndTargInds = concatMap (\boxInd -> let
         Box hyps targs = boxes!!boxInd
@@ -362,7 +498,7 @@ tidyTabImplOnce tab@(Tableau qZone boxes) = let
     results = mapMaybe (\(boxInd, targInd) -> tidyImplInTarg targInd boxInd tab) boxAndTargInds
     in if null results then Just tab else Just $ head results
 
-tidyTabOnBoxesOnce :: TableauMove
+tidyTabOnBoxesOnce :: Move
 tidyTabOnBoxesOnce tab@(Tableau qZone boxes) = let
     results = mapMaybe (\boxInd -> let
         result = tidyEverythingBox (qZone, boxes!!boxInd)
@@ -376,16 +512,16 @@ tidyTabOnBoxesOnce tab@(Tableau qZone boxes) = let
         newBoxes = as ++ (newBox:bs)
         in Just (Tableau newQZone newBoxes)
 
-tidyTabOnce :: TableauMove
+tidyTabOnce :: Move
 tidyTabOnce tab = tidyTabOnBoxesOnce tab >>= tidyTabImplOnce
 
-tidyEverything :: TableauMove
+tidyEverything :: Move
 tidyEverything = repeatAsMuchAsPossibleTab tidyTabOnce
 
-repeatAsMuchAsPossibleTab :: TableauMove -> TableauMove
+repeatAsMuchAsPossibleTab :: Move -> Move
 repeatAsMuchAsPossibleTab tabMove tab = repeatUntilFP tabMove (Just $ Tableau (Poset [] []) []) (Just tab)
     where
-        repeatUntilFP :: TableauMove -> Maybe Tableau -> Maybe Tableau -> Maybe Tableau
+        repeatUntilFP :: Move -> Maybe Tableau -> Maybe Tableau -> Maybe Tableau
         repeatUntilFP move' last current =
             if last == current then current else case current of
                 Just something -> repeatUntilFP move' current (move' something)
@@ -393,3 +529,4 @@ repeatAsMuchAsPossibleTab tabMove tab = repeatUntilFP tabMove (Just $ Tableau (P
 
 
 
+-}

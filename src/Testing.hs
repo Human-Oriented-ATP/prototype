@@ -13,6 +13,7 @@ import HoleExpr
 import Parser
 import Debug.Trace
 import ExistentialMoves
+import BasicMoves
 
 
 -- <<< MOVE TESTING >>>
@@ -67,25 +68,10 @@ f1 = forall (Just $ ExternalName "X") (0) $
         (TApp ( "open_in_metric") (Free 3) (Free 1) (Free 0))) $
     TApp ( "open_in_metric") (BApp ( "set_intersection") (Free 2) (Free 3)) (Free 1) (Free 0)
 fQZone = Poset [] []
-fBox = Box [] [f1]
-fQBox = (fQZone, fBox)
-fTab = Tableau fQZone [fBox]
+fBox = Box [] [PureTarg f1]
+fTab = Tableau fQZone fBox
 
-Just fResult' =
-    tidyEverything fTab
-
-Just fResult =
-    tidyEverything fTab
-    >>= boxToTabMove (libEquivTarg openSetDefinition (0, 1) 0) 0 >>= boxToTabMove (libEquivHyp openSetDefinition (0, 1) 1) 0 >>= boxToTabMove (libEquivHyp openSetDefinition (0, 1) 2) 0
-    >>= tidyEverything >>= boxToTabMove (peelExistentialTargBox 0) 0 >>= tidyEverything
-    >>= boxToTabMove (libEquivTarg intersectionDef (0, 1) 0) 1 >>= boxToTabMove (libEquivHyp intersectionDef (0, 1) 3) 1
-    >>= tidyEverything
-    >>= boxToTabMove (modusPonensBox 1 6) 1 >>= boxToTabMove (modusPonensBox 2 3) 1
-    >>= tidyEverything
-    >>= boxToTabMove (modusPonensBox 9 4) 1 >>= boxToTabMove (backwardsReasoningHypBox 11 1) 1
-    >>= boxToTabMove (modusPonensBox 10 4) 1 >>= boxToTabMove (backwardsReasoningHypBox 12 0) 1
-    >>= boxToTabMove (libBackwardReasoning lesserThanTrans) 1 >>= boxToTabMove (libBackwardReasoning lesserThanTrans) 1
-
+Just fResult = Just 0
 
 -- Sequence of functions
 Just sequenceOfFunctionsQZone = parseQZone "forall X, forall Y, forall f_"
@@ -124,7 +110,7 @@ uniformLimDefQZone = Poset [QVar "Forall" (Just $ ExternalName "f_") (-1)
     , QVar "Forall" (Just $ ExternalName "d_Y") (-4)
     , QVar "Forall" (Just $ ExternalName "Y") (-5)] []
 uniformLimDefe = holeFreeVars $ PApp ( "uniform_limit_of_functions_metric_space") (Free (-1)) (Free (-2)) (Free (-3)) (Free (-4)) (Free (-5))
-uniformLimDefe' = holeFreeVars $ forall (Just $ ExternalName "theta") (0) $ Implies (BApp ( "real_greater_than") (Free 0) (Con $  "0")) $
+uniformLimDefe' = holeFreeVars $ forall (Just $ ExternalName "theta") (0) $ Implies (BApp ( "real_greater_than") (Free 0) (Con "0")) $
     exists (Just $ ExternalName "N") (1) $ And (BApp ( "element_of") (Free 1) (Con $  "naturals")) $
     forall (Just $ ExternalName "n") (2) $ Implies (And (BApp ( "element_of") (Free 2) (Con $  "naturals")) (BApp ( "real_greater_than") (Free 2) (Free 1))) $
     forall (Just $ ExternalName "x") (3) $ Implies (BApp ( "element_of") (Free 3) (Free (-3))) $
@@ -161,39 +147,37 @@ g1 = forall (Just $ ExternalName "X") (0) $
     PApp ( "continuous_in_metric_space") (Free 4) (Free 2) (Free 0) (Free 3) (Free 1)
 
 gQZone = Poset [] []
-gBox = Box [] [g1]
-gQBox = (gQZone, gBox)
-gTab = Tableau gQZone [gBox]
+gBox = Box [] [PureTarg g1]
+gTab = Tableau gQZone gBox
 
-Just gResult = tidyEverything gTab >>= boxToTabMove (libEquivTargCondMap continuousDef (0, 1) [(0, 0), (1, 5), (2, 4)] 0) 0 >>= tidyEverything
-     >>= boxToTabMove (peelExistentialTargBox 0) 0 >>= tidyEverything
-     >>= boxToTabMove (libEquivHyp uniformLimDef (0, 1) 2) 0
-     >>= boxToTabMove (peelUniversalHypBox 2) 0 >>= commitToHypothesis 10 0 >>= tidyEverything
-     >>= boxToTabMove (peelUniversalHypBox 11) 0 >>= commitToHypothesis 12 0 >>= tidyEverything
-     >>= boxToTabMove (modusPonensBox 12 6) 0 >>= boxToTabMove (modusPonensBox 12 8) 0 >>= tidyEverything
-     >>= boxToTabMove (peelUniversalHypBox 1) 0 >>= commitToHypothesis 15 0
-     >>= boxToTabMove (libEquivHyp sequenceOfFunctions (0, 1) 3) 0 >>= boxToTabMove (peelUniversalHypBox 3) 0 >>= commitToHypothesis 16 0 >>= instantiateExistential "b" "a"
-     >>= boxToTabMove (libEquivHyp continuousDef (0, 1) 15) 0 >>= tidyEverything
-     >>= boxToTabMove (modusPonensBox 15 6) 0 >>= boxToTabMove (peelUniversalHypBox 15) 0 >>= commitToHypothesis 18 0 >>= instantiateExistential "b" "x"
-     >>= boxToTabMove (peelUniversalHypBox 18) 0 >>= commitToHypothesis 19 0 >>= instantiateExistential "b" "theta"
-     >>= boxToTabMove (peelExistentialHypBox 19) 0 >>= tidyEverything
-     >>= boxToTabMove (modusPonensBox 20 8) 0
-    -- >>= instantiateExistential "delta" "b" >>= boxToTabMove (rawModusPonensBox 21 9) 0
-    -- >>= instantiateExistential "a" "n" >>= boxToTabMove (libForwardReasoning triIneq) 0
-    -- >>= boxToTabMove (libBackwardReasoning lesserThanTrans) 0
-    -- >>= boxToTabMove (modusPonensBox 15 6) 0 >>= boxToTabMove (modusPonensBox 16 7) 0 >>= tidyEverything
-    -- >>= boxToTabMove (modusPonensBox 18 8) 0
-
-
-
-gResult' = tidyEverything gTab
+Just gResult = peelUniversalTarg [] 0 gTab >>= peelUniversalTarg [] 0 >>= peelUniversalTarg [] 0 >>= peelUniversalTarg [] 0 >>= peelUniversalTarg [] 0 >>= peelUniversalTarg [] 0
+    >>= tidyImplInTarg [] 0 >>= tidyAndInHyp [] 0 >>= tidyAndInHyp [] 0 >>= tidyAndInHyp [] 0 >>= tidyAndInHyp [] 0 >>= tidyAndInHyp [] 0
+    >>= libEquivTarg continuousDef (0, 1) [] 0 >>= peelUniversalTarg [] 0
+    >>= tidyImplInTarg [] 0 >>= peelUniversalTarg [] 0 >>= tidyImplInTarg [] 0
+    >>= peelExistentialTarg [] 0 >>= tidyAndInTarg [] 0
+    >>= peelUniversalTarg [] 1 >>= tidyImplInTarg [] 1
+    >>= tidyImplInTarg [1] 0 >>= libEquivHyp uniformLimDef (0, 1) [] 2
+    >>= peelUniversalHyp [] 2 >>= commitToHypothesis [] 8
+    >>= peelExistentialHyp [1] 0 >>= tidyAndInHyp [1] 0 >>= peelUniversalHyp [1] 1
+    >>= commitToHypothesis [1] 2 >>= modusPonens ([1,1], 0) ([1,1,1], 0)
+    >>= modusPonens ([1,1], 0) ([], 6) >>= peelUniversalHyp [] 1
+    >>= commitToHypothesis [] 9 >>= libEquivHyp sequenceOfFunctions (0, 1) [] 3
+    >>= peelUniversalHyp [] 3 >>= commitToHypothesis [] 10
+    >>= instantiateExistential "b" "a"
+    >>= libEquivHyp continuousDef (0, 1) [1, 1] 0
+    >>= modusPonens ([1,1], 0) ([], 6) >>= peelUniversalHyp [1,1] 1
+    >>= commitToHypothesis [1,1] 2 >>= peelExistentialHyp [1,1,1] 0 >>= tidyAndInHyp [1,1,1] 0
+    >>= modusPonens ([1,1,1], 1) ([1,1,1,1,1,1], 0) >>= instantiateExistential "delta" "c"
+    >>= rawModusPonens ([1,1,1,1,1,1], 3) ([1,1,1,1,1,1], 1)
+    >>= instantiateExistential "a" "n" >>= libForwardReasoning triIneq
+    >>= instantiateExistential "b" "theta"
 
 at1 = exists (Just $ ExternalName "x") 0 (forall (Just $ ExternalName "y") 0 (exists (Just $ ExternalName "z") 1 (Eq (Free 0) (Free 1))))
-aBox = Box [] [at1]
-aHead = Poset [] []
-aQBox = (aHead, aBox)
-Just aResult = (peelExistentialTargBox 0) aQBox >>= (peelUniversalTargBox 0) >>= (peelExistentialTargBox 0)
-aStr = pprintQBox aResult
+aBox = Box [] [PureTarg at1]
+aQZone = Poset [] []
+aTab = Tableau aQZone aBox
+Just aResult = Just 0
+
 
 
 -- Universal modus ponens with hyp
@@ -204,20 +188,16 @@ bh2= Eq (UApp ( "succ") (Free 1)) (Con ( "1"))
 
 bTestHead = Poset [QVar "Forall" (Just $ ExternalName "y") 1] []
 bTestBox = Box [bh1, bh2] []
-bTestQBox = (bTestHead, bTestBox)
-Just bResult = modusPonensBox 0 1 bTestQBox
-bBeforeStr = pprintQBox bTestQBox
-bStr = pprintQBox bResult
+Just bResult = Just 0
 
 
 -- Implication in target tidy
 ct1 = Implies (Eq (UApp ( "succ") (Free 0)) (UApp ( "succ") (Free 1))) (Eq (Free 0) (Free 1))
 cTestHead = Poset [QVar "Forall" (Just $ ExternalName "x") 0, QVar "Forall" (Just $ ExternalName "y") 1] []
-cTestBox = Box [] [ct1]
+cTestBox = Box [] [PureTarg ct1]
 cTestQBox = (cTestHead, cTestBox)
-cTestTab = Tableau cTestHead [cTestBox]
-Just cResult = tidyImplInTarg 0 0 cTestTab
-cStr = pprintTab cResult
+cTestTab = Tableau cTestHead cTestBox
+Just cResult = Just 0
 
 
 
@@ -236,8 +216,8 @@ Just xhh1 = parseWithQZone xQZone "metric_on(d, M)"
 Just xhh2 = parseWithQZone xQZone "open_in_metric(U, d, M)"
 Just xhh3 = parseWithQZone xQZone "open_in_metric(V, d, M)"
 Just xtt1 = parseWithQZone xQZone "open_in_metric(set_intersection(U, V), d, M)"
-xTab = Tableau xQZone [Box [xhh1, xhh2, xhh3] [xtt1]]
+xTab = Tableau xQZone (Box [xhh1, xhh2, xhh3] [PureTarg xtt1])
 
-Just a' = boxToTabMove (libForwardReasoning forwardReasoningTestLib) 0 xTab
-Just b' = boxToTabMove (libBackwardReasoning forwardReasoningTestLib) 0 xTab
+Just a' = Just 0
+Just b' = Just 0
 

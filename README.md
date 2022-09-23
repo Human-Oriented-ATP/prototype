@@ -1,8 +1,10 @@
 # human-style
 ## To-do tomorrow
-- Think about peeling dependence between boxes "b" business which is blocking us from finishing the prbolem
- - If we instantiate existential, delta, for an expression, expr, we might not have the necessary hypotheses in various boxes. Can we just add the hypotheses involving the expr free variables to all boxes containing delta? If instantiation is allowed then none of these free variables can depend on delta. 
 - Write library-style existence move
+- Write general existence solving
+- Write interface for motivated proof finder
+- Write library searching algorithm
+- Think about populating library
 
 ## To-do
 - Do we need a QZone in Library Equivalences? I think probably not, unless we want to significantly revamp how we're handling Library Equivalences. Remove soon (keeping for now in case it turns out to be useful).

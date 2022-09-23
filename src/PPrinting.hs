@@ -11,6 +11,7 @@ import qualified Data.HashMap.Strict as M
 import Data.String (IsString(..))
 import Data.List
 import Control.Monad.State
+import Data.Maybe
 
 import Debug.Trace
 import Text.Read (Lexeme(String))
@@ -64,7 +65,9 @@ pprintBinderM :: String -> Maybe ExternalName -> Scoped -> State PrintingState S
 pprintBinderM b sug sc = do
   (m, ExternalName sug') <- maybe getFresh getSuggestion sug -- If there's an ExternalName, getsSuggestion. If it's a Nothing, getsFresh
   s <- pprintExprM $ instantiate (Free m) sc
-  return $ b ++ sug' ++ ", " ++ s
+  return $ case sug' `M.lookup` htmlEntityCodes of
+    Just str -> b ++ str ++ ", " ++ s
+    Nothing -> b ++ sug' ++ ", " ++ s
 
 pprintBinderWithDomM :: String -> Maybe ExternalName -> String -> Expr -> Scoped -> State PrintingState String
 pprintBinderWithDomM b sug intermediateStr dom sc = do
@@ -72,7 +75,9 @@ pprintBinderWithDomM b sug intermediateStr dom sc = do
   s <- pprintExprM $ instantiate (Free m) sc
   do
     domOut <- pprintExprM dom
-    return $ b ++ sug' ++ intermediateStr ++ domOut ++ ", " ++ s
+    return $ case sug' `M.lookup` htmlEntityCodes of
+      Just str -> b ++ str ++ intermediateStr ++ domOut ++ ", " ++ s
+      Nothing -> b ++ sug' ++ intermediateStr ++ domOut ++ ", " ++ s
 
 pprintWithStringBetween :: Expr -> Expr -> String -> State PrintingState String
 pprintWithStringBetween a b str = do
@@ -173,79 +178,56 @@ pprintExpr :: Expr -> String
 pprintExpr e = evalState (pprintExprM e) (PS mempty mempty 0)
 
 
-showQZoneWithNamesNoDeps :: HashMap InternalName ExternalName -> QZone -> String
-showQZoneWithNamesNoDeps showMap qZone@(Poset set rel) = let
-  dealWithEmpty str = if str /= "" then str else "(empty)"
-  qListToStr = dealWithEmpty . intercalate ", " . map (\qVar -> (if qVarGetQuantifier qVar == "Forall" then "\8704" else "\8707") ++ handleHtmlCodes (getExternalName (showMap M.! qVarGetInternalName qVar)))
-  qZoneStr = qListToStr $ orderQZone qZone
-  in qZoneStr ++ "\n"
-  where
-    handleHtmlCodes :: String -> String
-    handleHtmlCodes str = case str `M.lookup` htmlEntityCodes of
-      Just something -> something
-      _ -> str
 
-showQZoneWithNames :: HashMap InternalName ExternalName -> QZone -> String
-showQZoneWithNames showMap qZone@(Poset set rel) = let
-  dealWithEmpty str = if str /= "" then str else "(empty)"
-  qListToStr = dealWithEmpty . intercalate ", " . map (\qVar -> (if qVarGetQuantifier qVar == "Forall" then "\8704" else "\8707") ++ getExternalName (showMap M.! qVarGetInternalName qVar))
-  qZoneStr = qListToStr $ orderQZone qZone
-  depsStr = dealWithEmpty . intercalate ", " $ map (\(q1, q2) -> getExternalName (showMap M.! qVarGetInternalName q1) ++ "<" ++ getExternalName (showMap M.! qVarGetInternalName q2)) rel
-  in qZoneStr ++ "\n" ++ "Deps: " ++ depsStr ++ "\n"
+data PrettyTableau = PrettyTableau {prettyGetQZone :: QZone,
+                                    prettyGetRootBox :: Box String} deriving (Eq, Read, Show)
 
-pprintQZoneWithNamesRaw ::QZone -> String
-pprintQZoneWithNamesRaw qZone@(Poset set rel) = let
+prettifyTab :: Tableau -> PrettyTableau
+prettifyTab (Tableau qZone box) = let PS showMap usedNames counter = getStartingPrintState qZone (PS mempty mempty 0)
+  in PrettyTableau qZone (fmap (pprintExprWithQZone qZone) box)
+
+pprintQZone :: QZone -> String
+pprintQZone qZone = let
+  PS showMap usedNames counter = getStartingPrintState qZone (PS mempty mempty 0)
   dealWithEmpty str = if str /= "" then str else "(empty)"
-  qListToStr = dealWithEmpty . intercalate ", " . map (\qVar -> (if qVarGetQuantifier qVar == "Forall" then "\8704" else "\8707") ++ show (qVarGetInternalName qVar))
-  qZoneStr = qListToStr $ orderQZone qZone
-  depsStr = dealWithEmpty . intercalate ", " $ map (\(q1, q2) ->  show (qVarGetInternalName q1) ++ "<" ++ show (qVarGetInternalName q2)) rel
-  in qZoneStr ++ "\n" ++ "Deps: " ++ depsStr ++ "\n"
+  dealWithHtmlCode :: String -> String
+  dealWithHtmlCode str = fromMaybe str (str `M.lookup` htmlEntityCodes)
+  qListToStr = dealWithEmpty . intercalate ", " . map (\qVar -> (if qVarGetQuantifier qVar == "Forall" then "\8704" else "\8707") ++ dealWithHtmlCode (getExternalName (showMap M.! qVarGetInternalName qVar)))
+  in qListToStr $ orderQZone qZone
 
 pprintQZoneDeps :: QZone -> String
 pprintQZoneDeps qZone@(Poset set rel) = let
   PS showMap usedNames counter = getStartingPrintState qZone (PS mempty mempty 0)
-  in showQZoneWithNames showMap qZone
-
-pprintQBox :: QBox -> String
-pprintQBox (qZone, Box hyps targs) = let
   dealWithEmpty str = if str /= "" then str else "(empty)"
-  PS showMap usedNames counter = getStartingPrintState qZone (PS mempty mempty 0)
-  in
-    "---- QZone ----\n" ++
-    showQZoneWithNamesNoDeps showMap qZone ++
-    "---- Hyps ----\n" ++
-    dealWithEmpty ( intercalate "\n" (zipWith (\a b -> a ++ ": " ++ b) (map show [0..]) $ map (pprintExprWithQZone qZone) hyps) ) ++ "\n" ++
-    "---- Targs ----\n" ++
-    dealWithEmpty ( intercalate "\n" (zipWith (\a b -> a ++ ": " ++ b) (map show [0..]) $ map (pprintExprWithQZone qZone) targs) )
+  dealWithHtmlCode :: String -> String
+  dealWithHtmlCode str = fromMaybe str (str `M.lookup` htmlEntityCodes)
+  depsStr = dealWithEmpty . intercalate ", " $ map (\(q1, q2) -> dealWithHtmlCode (getExternalName (showMap M.! qVarGetInternalName q1)) ++ "<" ++ dealWithHtmlCode (getExternalName (showMap M.! qVarGetInternalName q2))) rel
+  in depsStr
 
+boxNumberToStr :: BoxNumber -> String
+boxNumberToStr [] = "R"
+boxNumberToStr boxNumber = intercalate "." (map show boxNumber)
 
-rawPrintQBox :: QBox -> String
-rawPrintQBox (qZone, Box hyps targs) = let
-  dealWithEmpty str = if str /= "" then str else "(empty)"
-  PS showMap usedNames counter = getStartingPrintState qZone (PS mempty mempty 0)
-  in
-    "---- QZone ----\n" ++
-    pprintQZoneWithNamesRaw qZone ++
-    "---- Hyps ----\n" ++
-    dealWithEmpty ( intercalate "\n" (zipWith (\a b -> a ++ ": " ++ b) (map show [0..]) $ map show hyps) ) ++ "\n" ++
-    "---- Targs ----\n" ++
-    dealWithEmpty ( intercalate "\n" (zipWith (\a b -> a ++ ": " ++ b) (map show [0..]) $ map show targs) )
+printBoxForDebug :: BoxNumber -> Box String -> String
+printBoxForDebug boxNumber (Box hyps targs) = let
+  hypsStr = intercalate "\n" $
+    zipWith (\hypInd hyp -> boxNumberToStr boxNumber ++ "." ++ show hypInd ++ ": " ++ hyp) [0..] hyps
+  pprintTarg :: BoxNumber -> Int -> Targ String -> String
+  pprintTarg boxNumber' targInd (PureTarg s) = boxNumberToStr boxNumber' ++ "." ++ show targInd ++ ": " ++ s
+  pprintTarg boxNumber' targInd (BoxTarg s) = printBoxForDebug (boxNumber'++[targInd]) s
 
-pprintQBoxDeps :: QBox -> String
-pprintQBoxDeps (qZone, Box hyps targs) = let
-  dealWithEmpty str = if str /= "" then str else "(empty)"
-  PS showMap usedNames counter = getStartingPrintState qZone (PS mempty mempty 0)
-  in
-    "---- QZone ----\n" ++
-    showQZoneWithNames showMap qZone ++
-    "---- Hyps ----\n" ++
-    dealWithEmpty ( intercalate "\n" (zipWith (\a b -> a ++ ": " ++ b) (map show [0..]) $ map show hyps) ) ++ "\n" ++
-    "---- Targs ----\n" ++
-    dealWithEmpty ( intercalate "\n" (zipWith (\a b -> a ++ ": " ++ b) (map show [0..]) $ map show targs) )
+  targsStr = intercalate "\n" $
+    zipWith (pprintTarg boxNumber) [0..] targs
+  in "\n-----------------\nHyps (" ++ boxNumberToStr boxNumber ++ ")\n-----------------\n"
+  ++ hypsStr ++
+  "\n-----------------\nTargs ("++ boxNumberToStr boxNumber ++ ")\n-----------------\n"
+  ++ targsStr
 
-
-pprintTab :: Tableau -> String
-pprintTab (Tableau qZone boxes) = intercalate "\n\n" (map (\box -> pprintQBox (qZone, box)) boxes)
-
-rawPrintTab :: Tableau -> String
-rawPrintTab (Tableau qZone boxes) = intercalate "\n\n" (map (\box -> rawPrintQBox (qZone, box)) boxes)
+printTabForDebug :: Tableau -> String
+printTabForDebug tab@(Tableau qZone rootBox) = let
+  PrettyTableau _ prettyRootBox = prettifyTab tab
+  qZoneStr = pprintQZone qZone
+  qZoneDeps = pprintQZoneDeps qZone
+  rootBoxStr = printBoxForDebug [] prettyRootBox
+  in "QZone: " ++ qZoneStr ++ "\n-----------------\n"
+    ++ "Deps: " ++ qZoneDeps ++ rootBoxStr
